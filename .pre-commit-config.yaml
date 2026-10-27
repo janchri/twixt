@@ -1,0 +1,55 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+#
+# Coding style checks for every commit (https://pre-commit.com). The hooks are
+# local: they run the tools of requirements.txt, so nothing is downloaded.
+#
+#   pip install -r requirements.txt
+#   pre-commit install            # once per clone: runs on the files of each commit
+#   pre-commit run --all-files    # by hand
+#
+# C follows Zephyr's .clang-format, Python Zephyr's ruff rules (.ruff.toml).
+
+repos:
+  - repo: local
+    hooks:
+      - id: trailing-whitespace
+        name: trim trailing whitespace
+        entry: trailing-whitespace-fixer
+        language: system
+        types: [text]
+      - id: end-of-file-fixer
+        name: fix end of files
+        entry: end-of-file-fixer
+        language: system
+        types: [text]
+      - id: mixed-line-ending
+        name: mixed line ending
+        entry: mixed-line-ending --fix=lf
+        language: system
+        types: [text]
+      - id: check-yaml
+        name: check yaml
+        entry: check-yaml
+        language: system
+        types: [yaml]
+      - id: check-merge-conflict
+        name: check for merge conflicts
+        entry: check-merge-conflict
+        language: system
+        types: [text]
+      - id: clang-format
+        name: clang-format
+        entry: clang-format -i
+        language: system
+        types_or: [c]
+      - id: ruff-check
+        name: ruff check
+        entry: ruff check --force-exclude
+        language: system
+        types_or: [python, pyi]
+      - id: ruff-format
+        name: ruff format
+        entry: ruff format --force-exclude
+        language: system
+        types_or: [python, pyi]

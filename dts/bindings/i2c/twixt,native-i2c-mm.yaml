@@ -1,0 +1,63 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Multi-master I2C port for native_sim: the I2C block of one MCU, controller
+  and target. Every native_sim process is one MCU; processes with the same
+  bus-id share one bus, in /dev/shm/twixt_i2c_mm_<bus-id>.
+
+  - A controller that finds the bus busy waits for its STOP.
+  - Controllers that START within start-window-us arbitrate on address byte
+    and data; the lower wins, the others get -EAGAIN.
+  - Target events raise irq-line, so the target callbacks run in an ISR; the
+    controller waits for it, like SCL stretching.
+  - A byte takes 9 bit times, so CONFIG_SYS_CLOCK_TICKS_PER_SEC defaults to
+    100000; run in real time.
+  - A stuck bus (i2c_mm_native_stick_bus()) is recovered before the next START.
+
+  Test bench helpers: <drivers/i2c/i2c_mm_native.h>.
+
+compatible: "twixt,native-i2c-mm"
+
+include: i2c-controller.yaml
+
+properties:
+  bus-id:
+    type: int
+    default: 0
+    description: Processes with the same bus-id share one virtual bus
+
+  irq-line:
+    type: int
+    default: 8
+    description: |
+      native_sim interrupt line used to deliver target events to this port.
+      Lines 0..2 are used by the simulator itself.
+
+  irq-priority:
+    type: int
+    default: 1
+    description: Priority of the target interrupt
+
+  bus-timeout-us:
+    type: int
+    default: 50000
+    description: |
+      How long a controller waits for a busy bus to become free before it
+      gives up with -EBUSY
+
+  loopback:
+    type: boolean
+    description: |
+      A controller of this port can address its own target, which most
+      hardware cannot do. For tests that send raw transfers to their own
+      target.
+
+  start-window-us:
+    type: int
+    default: 500
+    description: |
+      Controllers that start within this time of each other are treated as
+      starting at the same moment and arbitrate. A real bus needs a fraction
+      of a bit time; separate processes cannot be that exact. Every transfer
+      pays this time as START latency.

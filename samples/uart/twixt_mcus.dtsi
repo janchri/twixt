@@ -1,0 +1,30 @@
+/*
+ * Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* The MCUs on the bus, the same for every image: included in the I2C bus node
+ * of each board's overlay (boards/). The gateway has the highest address: when
+ * it and a board start at the same moment, the board's request wins.
+ */
+
+mcu_a: mcu-a@10 {
+	compatible = "twixt,mcu";
+	reg = <0x10>;
+};
+
+mcu_b: mcu-b@11 {
+	compatible = "twixt,mcu";
+	reg = <0x11>;
+};
+
+mcu_c: mcu-c@12 {
+	compatible = "twixt,mcu";
+	reg = <0x12>;
+};
+
+mcu_gw: gw@70 {
+	compatible = "twixt,mcu";
+	reg = <0x70>;
+};

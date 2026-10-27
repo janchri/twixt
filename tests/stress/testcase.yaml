@@ -1,0 +1,26 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+common:
+  platform_allow:
+    - native_sim
+  integration_platforms:
+    - native_sim
+  tags:
+    - i2c
+    - settings
+tests:
+  # MCU a, started by twister; pytest/test_stress.py starts b and c next to
+  # it, from the builds below, on the same virtual bus
+  twixt.stress:
+    extra_args: MCU=a
+    harness: pytest
+    required_applications:
+      - name: twixt.stress.mcu_b
+      - name: twixt.stress.mcu_c
+  twixt.stress.mcu_b:
+    extra_args: MCU=b
+    build_only: true
+  twixt.stress.mcu_c:
+    extra_args: MCU=c
+    build_only: true

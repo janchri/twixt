@@ -1,0 +1,38 @@
+/*
+ * Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* The bus on native_sim (twixt,native-i2c-mm); TWIXT_SELF_LABEL is mcu_<MCU> */
+
+/ {
+	chosen {
+		twixt,self = &TWIXT_SELF_LABEL;
+	};
+};
+
+&i2c0 {
+	compatible = "twixt,native-i2c-mm";
+	bus-id = <4>;
+
+	/* The MCUs are processes that the host scheduler wakes up within about a
+	 * millisecond of each other: that is what counts as "at the same moment"
+	 */
+	start-window-us = <2000>;
+
+	mcu_a: mcu-a@10 {
+		compatible = "twixt,mcu";
+		reg = <0x10>;
+	};
+
+	mcu_b: mcu-b@11 {
+		compatible = "twixt,mcu";
+		reg = <0x11>;
+	};
+
+	mcu_c: mcu-c@12 {
+		compatible = "twixt,mcu";
+		reg = <0x12>;
+	};
+};

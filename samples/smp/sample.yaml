@@ -1,0 +1,24 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+sample:
+  name: MCUmgr over twixt
+common:
+  platform_allow:
+    - native_sim
+  integration_platforms:
+    - native_sim
+  tags:
+    - i2c
+    - mcumgr
+tests:
+  # The gateway, started by twister; pytest/test_smp.py starts the board next
+  # to it and talks SMP to it through the gateway's PTY
+  sample.twixt.smp:
+    extra_args: MCU=gw
+    harness: pytest
+    required_applications:
+      - name: sample.twixt.smp.mcu_a
+  sample.twixt.smp.mcu_a:
+    extra_args: MCU=a
+    build_only: true

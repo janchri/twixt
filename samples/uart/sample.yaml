@@ -1,0 +1,41 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+sample:
+  name: A UART over twixt
+common:
+  tags:
+    - i2c
+    - shell
+tests:
+  # The gateway, started by twister; pytest/test_uart.py starts the
+  # boards a, b and c next to it, from the builds below, on the same virtual bus
+  sample.twixt.uart:
+    platform_allow: native_sim
+    integration_platforms:
+      - native_sim
+    extra_args: MCU=gw
+    harness: pytest
+    required_applications:
+      - name: sample.twixt.uart.mcu_a
+      - name: sample.twixt.uart.mcu_b
+      - name: sample.twixt.uart.mcu_c
+  sample.twixt.uart.mcu_a:
+    platform_allow: native_sim
+    extra_args: MCU=a
+    build_only: true
+  sample.twixt.uart.mcu_b:
+    platform_allow: native_sim
+    extra_args: MCU=b
+    build_only: true
+  sample.twixt.uart.mcu_c:
+    platform_allow: native_sim
+    extra_args: MCU=c
+    build_only: true
+  # The gateway on a Raspberry Pi Pico, on real I2C
+  sample.twixt.uart.gateway_hw:
+    platform_allow: rpi_pico
+    integration_platforms:
+      - rpi_pico
+    extra_args: MCU=gw
+    build_only: true

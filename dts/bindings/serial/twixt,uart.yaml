@@ -1,0 +1,22 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  A UART over twixt: a byte stream to one other MCU, peer. Point
+  zephyr,shell-uart or zephyr,console at it, or bridge it with
+  zephyr,uart-bridge.
+
+    bus_uart: bus-uart {
+            compatible = "twixt,uart";
+            peer = <&gw>;
+    };
+
+compatible: "twixt,uart"
+
+include: base.yaml
+
+properties:
+  peer:
+    type: phandle
+    required: true
+    description: twixt,mcu at the other end

@@ -1,0 +1,23 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  An MCU on twixt, at its I2C address. /chosen twixt,self is the
+  MCU the image runs on. See include/twixt/twixt.h.
+
+    &i2c0 {
+            mcu_a: mcu-a@10 {
+                    compatible = "twixt,mcu";
+                    reg = <0x10>;
+            };
+    };
+
+    / {
+            chosen {
+                    twixt,self = &mcu_a;
+            };
+    };
+
+compatible: "twixt,mcu"
+
+include: i2c-device.yaml

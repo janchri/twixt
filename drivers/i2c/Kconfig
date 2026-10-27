@@ -1,0 +1,59 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+config I2C_MM_NATIVE
+	bool "Multi-master I2C port for native_sim"
+	default y
+	depends on DT_HAS_TWIXT_NATIVE_I2C_MM_ENABLED
+	depends on ARCH_POSIX
+	help
+	  I2C controller and target of one native_sim process, on a bus shared
+	  with other processes. See dts/bindings/i2c/twixt,native-i2c-mm.yaml.
+
+menuconfig I2C_MM
+	bool "Multi-master I2C link: one request/response transfer each"
+	select I2C_TARGET
+	help
+	  Requests and responses between equal MCUs, one I2C transfer each.
+	  See <drivers/i2c/i2c_mm.h>.
+
+if I2C_MM
+
+config I2C_MM_MSG_MAX
+	int "Longest request or response"
+	default 64
+	range 8 255
+	help
+	  In bytes. The same on every MCU of the bus.
+
+config I2C_MM_RETRY_MS
+	int "Retry time after lost arbitration or a busy bus, in ms"
+	default 500
+
+config I2C_MM_NACK_RETRY_MS
+	int "Retry time after an address NACK, in ms"
+	default 5
+	help
+	  A target that is a controller itself a moment ago may NACK its address
+	  until it is a target again: an I2C block that cannot be both at once,
+	  such as the DesignWare one (Raspberry Pi Pico), switches in between.
+	  An address NACK the driver reports as -ENXIO is retried for this long
+	  before the target counts as absent (-EIO). Other NACKs are not retried:
+	  the request may have run.
+
+config I2C_MM_TARGET_REREGISTER
+	bool "Register the target again after every transfer"
+	default y if DT_HAS_SNPS_DESIGNWARE_I2C_ENABLED
+	help
+	  For drivers that leave target mode for a transfer and do not return
+	  to it, such as the DesignWare driver (Raspberry Pi Pico).
+
+module = I2C_MM
+module-str = i2c_mm
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # I2C_MM
+
+# A byte on the native_sim bus is 90 us; a coarser tick would round it up
+configdefault SYS_CLOCK_TICKS_PER_SEC
+	default 100000 if I2C_MM_NATIVE

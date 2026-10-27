@@ -1,0 +1,39 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+DT_CHOSEN_TWIXT_SELF := twixt,self
+
+menuconfig TWIXT
+	bool "twixt: services between equal MCUs on a multi-master I2C bus"
+	default y if $(dt_chosen_enabled,$(DT_CHOSEN_TWIXT_SELF))
+	depends on I2C
+	select I2C_MM
+	help
+	  On with /chosen twixt,self. See <twixt/twixt.h>.
+
+if TWIXT
+
+config TWIXT_INIT_PRIORITY
+	int "Init priority"
+	default 60
+	help
+	  After the I2C driver.
+
+config TWIXT_SHELL
+	bool "Shell commands"
+	default y
+	depends on SHELL
+
+config TWIXT_PING
+	bool "Ping service"
+	default y
+	help
+	  Every MCU should answer it. See <twixt/ping.h>.
+
+rsource "Kconfig.settings"
+
+module = TWIXT
+module-str = twixt
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # TWIXT

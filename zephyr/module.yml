@@ -1,0 +1,21 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+name: twixt
+
+build:
+  cmake: .
+  kconfig: Kconfig
+  settings:
+    dts_root: .
+
+samples:
+  - samples
+
+tests:
+  - tests
+
+package-managers:
+  pip:
+    requirement-files:
+      - scripts/requirements.txt

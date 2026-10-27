@@ -1,0 +1,53 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+config UART_TWIXT
+	bool "UART over twixt"
+	default y
+	depends on DT_HAS_TWIXT_UART_ENABLED
+	depends on TWIXT
+	select SERIAL_HAS_DRIVER
+	select SERIAL_SUPPORT_INTERRUPT
+	select UART_INTERRUPT_DRIVEN
+	help
+	  See dts/bindings/serial/twixt,uart.yaml.
+
+if UART_TWIXT
+
+config UART_TWIXT_RX_BUF_SIZE
+	int "Receive buffer of each UART"
+	default 256
+
+config UART_TWIXT_TX_BUF_SIZE
+	int "Transmit buffer of each UART"
+	default 256
+
+config UART_TWIXT_CHUNK
+	int "Most bytes in one request"
+	default 32
+	range 1 252
+	help
+	  Longer chunks cost less overhead, shorter ones hold the bus for less
+	  time. Up to TWIXT_REQ_DATA_MAX.
+
+config UART_TWIXT_RETRY_MS
+	int "Retry interval while the peer is full or the bus is taken, in ms"
+	default 5
+
+config UART_TWIXT_WORKQ_PRIORITY
+	int "Priority of the UART work queue"
+	default 2
+
+config UART_TWIXT_WORKQ_STACK_SIZE
+	int "Stack size of the UART work queue"
+	default 1536
+
+endif # UART_TWIXT
+
+# Interrupt-driven, as MCUmgr's shell transport needs; Zephyr defaults to polling
+# on native_sim
+DT_CHOSEN_SHELL_UART := zephyr,shell-uart
+DT_COMPAT_TWIXT_UART := twixt,uart
+
+configdefault SHELL_BACKEND_SERIAL_INTERRUPT_DRIVEN
+	default y if UART_TWIXT && $(dt_chosen_has_compat,$(DT_CHOSEN_SHELL_UART),$(DT_COMPAT_TWIXT_UART))
