@@ -51,6 +51,7 @@ struct uart_twixt_data {
 	void *cb_data;
 	bool rx_irq;
 	bool tx_irq;
+	atomic_t tx_enables;
 };
 
 static K_THREAD_STACK_DEFINE(uart_twixt_stack, CONFIG_UART_TWIXT_WORKQ_STACK_SIZE);
@@ -109,6 +110,7 @@ static void uart_twixt_irq_tx_enable(const struct device *dev)
 	struct uart_twixt_data *d = dev->data;
 
 	d->tx_irq = true;
+	atomic_inc(&d->tx_enables);
 	uart_twixt_kick(d);
 }
 
@@ -171,12 +173,20 @@ static void uart_twixt_irq_callback_set(const struct device *dev, uart_irq_callb
 	d->cb_data = user_data;
 }
 
+/* The callback runs here, not in the thread that enables TX (a UART bridge reading the other
+ * UART): TX disabled by the callback after an enable from there would stop it for good
+ */
 static void uart_twixt_irq_run(const struct device *dev)
 {
 	struct uart_twixt_data *d = dev->data;
+	atomic_val_t enables = atomic_get(&d->tx_enables);
 
 	if (d->cb != NULL && uart_twixt_irq_is_pending(dev)) {
 		d->cb(dev, d->cb_data);
+		if (!d->tx_irq && atomic_get(&d->tx_enables) != enables) {
+			d->tx_irq = true;
+			uart_twixt_kick(d);
+		}
 	}
 }
 
