@@ -1,0 +1,94 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Multi-master I2C from a target-only I2C block and two GPIOs on the same
+  pins, for MCUs whose I2C controller cannot detect lost arbitration, such as
+  the nRF TWIM (nRF52, nRF53, nRF54L, nRF91), or whose I2C block cannot be
+  controller and target at once, such as the DesignWare one (Raspberry Pi
+  Pico).
+
+  The target block (target) serves requests. A transfer of this port
+  unregisters it, which must hand the pins back to the GPIOs (the nRF TWIS
+  does), clocks the transfer in software and registers the target again.
+  Where configuring the GPIOs takes the pins away from the target block and
+  its driver does not take them back on registering (Raspberry Pi Pico:
+  DesignWare I2C), pinctrl-0 holds the target's pin function, applied before
+  the target is registered again.
+
+  - Every bit is read back: a 1 that reads 0 is lost arbitration (-EAGAIN).
+  - The bus is free once SCL and SDA stayed high for bus-free-us; a bus
+    that is not free within bus-timeout-us gives -EBUSY.
+  - SDA low with SCL high for all of bus-timeout-us is a stuck bus: up to 9
+    clocks and a STOP recover it before the START.
+  - SCL stretching is waited for up to stretch-timeout-us.
+  - During its own transfer the port NACKs its address: the other MCUs need
+    CONFIG_I2C_MM_NACK_RETRY_MS longer than its longest transfer, a request
+    and a response of CONFIG_I2C_MM_MSG_MAX bytes each.
+  - It ends its STOP by registering the target again, so the target is back
+    before the bus is free.
+  - The CPU clocks the bus; the high phase of each bit runs with interrupts
+    locked, about half a bit time.
+
+    i2c-mm {
+            compatible = "twixt,i2c-mm-gpio";
+            target = <&i2c1>;
+            scl-gpios = <&gpio0 27 0>;
+            sda-gpios = <&gpio0 26 0>;
+            clock-frequency = <I2C_BITRATE_STANDARD>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            mcu_a: mcu-a@10 {
+                    compatible = "twixt,mcu";
+                    reg = <0x10>;
+            };
+    };
+
+    &i2c1 {
+            compatible = "nordic,nrf-twis";
+            status = "okay";
+            /* pinctrl with the same pins as scl-gpios and sda-gpios */
+    };
+
+compatible: "twixt,i2c-mm-gpio"
+
+include: [i2c-controller.yaml, pinctrl-device.yaml]
+
+properties:
+  target:
+    type: phandle
+    required: true
+    description: |
+      Target-only I2C block on the same pins; unregistering its target must
+      release the pins
+
+  scl-gpios:
+    type: phandle-array
+    required: true
+    description: SCL, driven open drain
+
+  sda-gpios:
+    type: phandle-array
+    required: true
+    description: SDA, driven open drain
+
+  bus-free-us:
+    type: int
+    default: 30
+    description: |
+      How long SCL and SDA must stay high before this port starts. Longer
+      than the 4.7 us the I2C specification asks after a STOP, and longer
+      than any pause with both lines high inside a frame: up to 18 us were
+      measured on a bus with a hardware controller, so a
+      shorter time can start in the middle of another master's frame.
+
+  bus-timeout-us:
+    type: int
+    default: 1000
+    description: How long a transfer waits for a free bus before -EBUSY
+
+  stretch-timeout-us:
+    type: int
+    default: 10000
+    description: How long a target may hold SCL low before -EIO

@@ -30,6 +30,29 @@ config TWIXT_PING
 	help
 	  Every MCU should answer it. See <twixt/ping.h>.
 
+config TWIXT_ECHO
+	bool "Echo service"
+	default y
+	help
+	  Answers with the request data, for tests of the bus. See
+	  <twixt/echo.h>.
+
+config TWIXT_STRESS
+	bool "Load command"
+	depends on TWIXT_SHELL
+	depends on TWIXT_ECHO
+	help
+	  "twixt stress start <interval_ms> <seconds> <addr>..." sends echo
+	  requests round-robin from a thread for <seconds> (0: until
+	  "twixt stress stop"), with every length up to the limit, and checks
+	  every answer byte. "twixt stress" prints the counts. The MCUs at
+	  <addr> need CONFIG_TWIXT_ECHO.
+
+config TWIXT_STRESS_STACK_SIZE
+	int "Stack of the load thread"
+	default 1024
+	depends on TWIXT_STRESS
+
 rsource "Kconfig.settings"
 
 module = TWIXT

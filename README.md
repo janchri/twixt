@@ -96,9 +96,10 @@ twixt/scripts/twixt_run.sh twixt/samples/hello a b
 |---|---|---|
 | Ping (0x00) | `subsys/twixt/ping.c` | `<twixt/ping.h>`, `CONFIG_TWIXT_PING` |
 | Settings (0x01) | `subsys/twixt/settings.c` | `<twixt/settings.h>`, `CONFIG_TWIXT_SETTINGS` |
+| Echo (0x02) | `subsys/twixt/echo.c` | `<twixt/echo.h>`, `CONFIG_TWIXT_ECHO` |
 | UART (0x10) | `drivers/serial/uart_twixt.c` | `dts/bindings/serial/twixt,uart.yaml` |
 
-With `CONFIG_TWIXT_SHELL`, ping and settings add their commands to the `twixt` shell command.
+With `CONFIG_TWIXT_SHELL`, ping, echo and settings add their commands to the `twixt` shell command. `CONFIG_TWIXT_STRESS` adds `twixt stress`, a load test of the bus with echo requests (`subsys/twixt/stress.c`).
 
 ## Samples and tests
 
@@ -142,6 +143,7 @@ Each layer only knows the one below. Details are in the headers and bindings:
 | Link | `drivers/i2c/i2c_mm.c` | `<drivers/i2c/i2c_mm.h>`, `CONFIG_I2C_MM` |
 | twixt | `subsys/twixt/twixt.c` | `<twixt/twixt.h>`, `CONFIG_TWIXT` |
 | Bus on native_sim | `drivers/i2c/i2c_mm_native.c` | `dts/bindings/i2c/twixt,native-i2c-mm.yaml`, `<drivers/i2c/i2c_mm_native.h>` |
+| Bus from a target block and GPIOs | `drivers/i2c/i2c_mm_gpio.c` | `dts/bindings/i2c/twixt,i2c-mm-gpio.yaml` |
 
 </details>
 
@@ -151,7 +153,7 @@ Each layer only knows the one below. Details are in the headers and bindings:
 
 The I2C driver must be controller and target on one block, report a lost arbitration as `-EAGAIN`, recover a stuck bus before its START, report STOP to the target, and let the target answer within a byte time (or stretch SCL).
 
-The RP2040 (`snps,designware-i2c`) is enough for a console gateway: it needs `CONFIG_I2C_MM_TARGET_REREGISTER`, reports lost arbitration as `-EIO`, and is no target during its own transfers. Good candidates for the product MCUs: STM32 I2C v2, NXP LPI2C.
+Where it cannot, `twixt,i2c-mm-gpio` keeps the I2C block as the target and clocks the MCU's own transfers in software on the same pins: the nRF TWIS (the TWIM does not detect lost arbitration) and the RP2040 (`snps,designware-i2c` is not controller and target at once). Good candidates for the product MCUs: STM32 I2C v2, NXP LPI2C.
 
 </details>
 

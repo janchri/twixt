@@ -13,6 +13,8 @@
 
 LOG_MODULE_REGISTER(i2c_mm, CONFIG_I2C_MM_LOG_LEVEL);
 
+#include "target_reregister.h"
+
 void i2c_mm_get_stats(const struct i2c_mm *mm, struct i2c_mm_stats *stats)
 {
 	*stats = mm->stats;
@@ -62,11 +64,38 @@ static int read_processed(struct i2c_target_config *cfg, uint8_t *val)
 	return 0;
 }
 
+#ifdef CONFIG_I2C_TARGET_BUFFER_MODE
+static void buf_write_received(struct i2c_target_config *cfg, uint8_t *buf, uint32_t len)
+{
+	struct i2c_mm *mm = CONTAINER_OF(cfg, struct i2c_mm, target);
+
+	mm->req_len = MIN(len, sizeof(mm->req));
+	memcpy(mm->req, buf, mm->req_len);
+}
+
+static int buf_read_requested(struct i2c_target_config *cfg, uint8_t **buf, uint32_t *len)
+{
+	struct i2c_mm *mm = CONTAINER_OF(cfg, struct i2c_mm, target);
+
+	mm->rsp_len = mm->serve(mm->req, mm->req_len, mm->rsp);
+	memset(&mm->rsp[mm->rsp_len], 0xff, sizeof(mm->rsp) - mm->rsp_len);
+	mm->req_len = 0;
+	mm->stats.served++;
+	*buf = mm->rsp;
+	*len = sizeof(mm->rsp);
+	return 0;
+}
+#endif
+
 static const struct i2c_target_callbacks target_cb = {
 	.write_requested = forget_request,
 	.write_received = write_received,
 	.read_requested = read_requested,
 	.read_processed = read_processed,
+#ifdef CONFIG_I2C_TARGET_BUFFER_MODE
+	.buf_write_received = buf_write_received,
+	.buf_read_requested = buf_read_requested,
+#endif
 	.stop = forget_request,
 };
 
@@ -122,7 +151,7 @@ int i2c_mm_transfer(struct i2c_mm *mm, uint16_t addr, const void *req, size_t re
 		k_mutex_lock(&mm->lock, K_FOREVER);
 		ret = i2c_write_read(mm->i2c, addr, req, req_len, rsp, rsp_len);
 		if (IS_ENABLED(CONFIG_I2C_MM_TARGET_REREGISTER)) {
-			(void)i2c_target_register(mm->i2c, &mm->target);
+			(void)target_reregister(mm->i2c, &mm->target);
 		}
 		nack = ret == -ENXIO;
 		if (ret == 0) {

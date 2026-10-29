@@ -10,6 +10,28 @@ config I2C_MM_NATIVE
 	  I2C controller and target of one native_sim process, on a bus shared
 	  with other processes. See dts/bindings/i2c/twixt,native-i2c-mm.yaml.
 
+config I2C_MM_GPIO
+	bool "Multi-master I2C from a target-only block and GPIOs"
+	default y
+	depends on DT_HAS_TWIXT_I2C_MM_GPIO_ENABLED
+	depends on GPIO
+	select I2C_TARGET
+	imply DEVICE_DEINIT_SUPPORT
+	help
+	  Software controller with arbitration on the pins of a target-only
+	  I2C block, such as the nRF TWIS. A target block that refuses to be
+	  registered again after a transfer is initialized again
+	  (DEVICE_DEINIT_SUPPORT). See
+	  dts/bindings/i2c/twixt,i2c-mm-gpio.yaml.
+
+config I2C_MM_GPIO_INIT_PRIORITY
+	int "Init priority of the multi-master GPIO port"
+	default 55
+	depends on I2C_MM_GPIO
+	help
+	  After the target block (CONFIG_I2C_INIT_PRIORITY) and the GPIOs,
+	  before twixt (CONFIG_TWIXT_INIT_PRIORITY).
+
 menuconfig I2C_MM
 	bool "Multi-master I2C link: one request/response transfer each"
 	select I2C_TARGET
