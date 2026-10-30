@@ -55,12 +55,12 @@
 /* The gateway's ports to the laptop (gateway.overlay enables them) */
 &zephyr_udc0 {
 	/* The same order on every twixt Pico: if00 the log, if02 MCUmgr, if04 the gateway's shell,
-	 * then the boards. The log and MCUmgr wait for the host instead of losing data.
+	 * then the boards. Only MCUmgr waits for the host (hw-flow-control): it writes its answers
+	 * with poll_out, which drops what does not fit otherwise.
 	 */
 	usb_log: usb-log {
 		compatible = "zephyr,cdc-acm-uart";
 		label = "twixt log";
-		hw-flow-control;
 	};
 
 	usb_mcumgr: usb-mcumgr {
@@ -72,7 +72,6 @@
 	host_gw: host-gw {
 		compatible = "zephyr,cdc-acm-uart";
 		label = "twixt gateway";
-		hw-flow-control;
 		status = "okay";
 	};
 

@@ -14,11 +14,14 @@
  * The high phase of a bit runs with interrupts locked, so the bit is sampled
  * while SCL is high and no other controller's clock cycle is missed.
  *
- * Times are counted in reads of SCL, calibrated against the system clock at
- * init: short busy waits are far off on some SoCs. The calibration also times
- * a bit without waits, the cost of the GPIO calls, and takes it off the waits:
- * a third off the low phase, two thirds off the high phase, which releases SCL,
- * waits for it and samples SDA.
+ * Every phase ends at a time on a counter, counted from the edge that began it, so the time the
+ * GPIO calls take is part of the phase; a bit ends a period after SCL fell, however slowly SCL
+ * rose, but stays high for the minimum high time at least. Counted loops would change their
+ * speed with the code around them (e.g. through an XIP cache). The waits poll SCL, for clock
+ * stretching and other controllers.
+ *
+ * The counter is that of the timing functions. On the RP2040 it is the 1 MHz timer and the pins
+ * are SIO registers: k_cycle_get_32() and the GPIO API take about 1 us per call there.
  */
 
 #define DT_DRV_COMPAT twixt_i2c_mm_gpio
@@ -30,6 +33,12 @@
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/timing/timing.h>
+
+#ifdef CONFIG_SOC_SERIES_RP2040
+#include <hardware/structs/sio.h>
+#include <hardware/structs/timer.h>
+#endif
 
 LOG_MODULE_REGISTER(i2c_mm_gpio, CONFIG_I2C_LOG_LEVEL);
 
@@ -37,11 +46,8 @@ LOG_MODULE_REGISTER(i2c_mm_gpio, CONFIG_I2C_LOG_LEVEL);
 
 #define STRETCH_LOCKED_US 100
 #define RECOVERY_CLOCKS   9
-#define CALIBRATE_MS      10
 #define LOW_SHARE         55 /* % of the period, like the minimum 4.7 us low to 4.0 us high */
 #define START_STOP_US     5  /* > tSU;STA 4.7 us, tHD;STA and tSU;STO 4.0 us */
-
-#define US_TO_POLLS(d, us) DIV_ROUND_UP((uint64_t)(us) * (d)->polls_per_ms, USEC_PER_MSEC)
 
 struct mm_gpio_config {
 	const struct device *target;
@@ -58,43 +64,109 @@ struct mm_gpio_data {
 	struct k_mutex lock;
 	struct i2c_target_config *target_cfg;
 	uint32_t dev_config;
-	uint32_t polls_per_ms;
-	uint32_t bit_cost; /* of clock_bit() without waits */
-	uint32_t t_low; /* in SCL reads, like all times below */
+	uint32_t cycles_per_us;
+	uint32_t t_low; /* in cycles of the counter, like all times below */
 	uint32_t t_high;
+	uint32_t t_high_min;
+	uint32_t scl_fell; /* when this controller last pulled SCL low */
 };
+
+#ifdef CONFIG_SOC_SERIES_RP2040
+/* Open drain: the output is 0, the output enable pulls the line low */
+static inline void pin_set(const struct gpio_dt_spec *g, int v)
+{
+	if (v) {
+		sio_hw->gpio_oe_clr = BIT(g->pin);
+	} else {
+		sio_hw->gpio_oe_set = BIT(g->pin);
+	}
+}
+
+static inline int pin_get(const struct gpio_dt_spec *g)
+{
+	return (sio_hw->gpio_in >> g->pin) & 1;
+}
+
+static inline uint32_t now(void)
+{
+	return timer_hw->timerawl;
+}
+
+static uint32_t counter_init(void)
+{
+	return 1;
+}
+#else
+static inline void pin_set(const struct gpio_dt_spec *g, int v)
+{
+	gpio_pin_set_raw(g->port, g->pin, v);
+}
+
+static inline int pin_get(const struct gpio_dt_spec *g)
+{
+	return gpio_pin_get_raw(g->port, g->pin);
+}
+
+static inline uint32_t now(void)
+{
+	return (uint32_t)timing_counter_get();
+}
+
+static uint32_t counter_init(void)
+{
+	timing_init();
+	timing_start();
+	return MAX(timing_freq_get() / USEC_PER_SEC, 1);
+}
+#endif
 
 static inline void scl_set(const struct mm_gpio_config *cfg, int v)
 {
-	gpio_pin_set_raw(cfg->scl.port, cfg->scl.pin, v);
+	pin_set(&cfg->scl, v);
 }
 
 static inline void sda_set(const struct mm_gpio_config *cfg, int v)
 {
-	gpio_pin_set_raw(cfg->sda.port, cfg->sda.pin, v);
+	pin_set(&cfg->sda, v);
 }
 
 static inline int scl_get(const struct mm_gpio_config *cfg)
 {
-	return gpio_pin_get_raw(cfg->scl.port, cfg->scl.pin);
+	return pin_get(&cfg->scl);
 }
 
 static inline int sda_get(const struct mm_gpio_config *cfg)
 {
-	return gpio_pin_get_raw(cfg->sda.port, cfg->sda.pin);
+	return pin_get(&cfg->sda);
 }
 
-static void hold(const struct mm_gpio_config *cfg, uint32_t polls)
+/* A minimum time: one tick more, since the edge may come late in the tick it was read in */
+static inline uint32_t us(const struct mm_gpio_data *d, uint32_t t)
 {
-	while (polls-- > 0) {
-		(void)scl_get(cfg);
+	return t * d->cycles_per_us + 1;
+}
+
+static inline bool before(uint32_t deadline)
+{
+	return (int32_t)(now() - deadline) < 0;
+}
+
+static void hold_until(uint32_t deadline)
+{
+	while (before(deadline)) {
 	}
 }
 
-static bool wait_scl_high(const struct mm_gpio_config *cfg, uint32_t polls)
+static void scl_fall(struct mm_gpio_data *d, const struct mm_gpio_config *cfg)
 {
-	for (uint32_t i = 0; !scl_get(cfg); i++) {
-		if (i >= polls) {
+	scl_set(cfg, 0);
+	d->scl_fell = now();
+}
+
+static bool wait_scl_high(const struct mm_gpio_config *cfg, uint32_t deadline)
+{
+	while (!scl_get(cfg)) {
+		if (!before(deadline)) {
 			return false;
 		}
 	}
@@ -105,19 +177,18 @@ static bool wait_scl_high(const struct mm_gpio_config *cfg, uint32_t polls)
  * high only with interrupts locked, else a preempted frame looks like a free bus: while a
  * target stretches, interrupts run with SCL held low by this master too.
  */
-static int scl_rise(const struct mm_gpio_data *d, const struct mm_gpio_config *cfg,
-		    unsigned int *key)
+static int scl_rise(struct mm_gpio_data *d, const struct mm_gpio_config *cfg, unsigned int *key)
 {
 	uint32_t tries = DIV_ROUND_UP(cfg->stretch_timeout_us, STRETCH_LOCKED_US);
 
 	*key = irq_lock();
 	scl_set(cfg, 1);
-	while (!wait_scl_high(cfg, US_TO_POLLS(d, STRETCH_LOCKED_US))) {
+	while (!wait_scl_high(cfg, now() + us(d, STRETCH_LOCKED_US))) {
 		if (tries-- == 0U) {
 			irq_unlock(*key);
 			return -EIO;
 		}
-		scl_set(cfg, 0);
+		scl_fall(d, cfg);
 		irq_unlock(*key);
 		*key = irq_lock();
 		scl_set(cfg, 1);
@@ -126,33 +197,38 @@ static int scl_rise(const struct mm_gpio_data *d, const struct mm_gpio_config *c
 }
 
 /* One bit; *bit is what was on SDA. With arb, a 1 that reads 0 releases both lines. */
-static int clock_bit(const struct mm_gpio_data *d, const struct mm_gpio_config *cfg, int out,
-		     bool arb, int *bit)
+static int clock_bit(struct mm_gpio_data *d, const struct mm_gpio_config *cfg, int out, bool arb,
+		     int *bit)
 {
+	uint32_t high_end;
 	unsigned int key;
 	int ret;
 
 	sda_set(cfg, out);
-	hold(cfg, d->t_low);
+	hold_until(d->scl_fell + d->t_low);
 	ret = scl_rise(d, cfg, &key);
 	if (ret) {
 		sda_set(cfg, 1);
 		return ret;
+	}
+	high_end = d->scl_fell + d->t_low + d->t_high;
+	if ((int32_t)(now() + d->t_high_min - high_end) > 0) {
+		high_end = now() + d->t_high_min;
 	}
 	*bit = sda_get(cfg);
 	if (arb && out && !*bit) {
 		irq_unlock(key);
 		return -EAGAIN;
 	}
-	for (uint32_t i = 0; i < d->t_high && scl_get(cfg); i++) {
+	while (before(high_end) && scl_get(cfg)) {
 	}
-	scl_set(cfg, 0);
+	scl_fall(d, cfg);
 	irq_unlock(key);
 	return 0;
 }
 
 /* 0: ACK, 1: NACK */
-static int write_byte(const struct mm_gpio_data *d, const struct mm_gpio_config *cfg, uint8_t val)
+static int write_byte(struct mm_gpio_data *d, const struct mm_gpio_config *cfg, uint8_t val)
 {
 	int bit;
 	int ret;
@@ -167,7 +243,7 @@ static int write_byte(const struct mm_gpio_data *d, const struct mm_gpio_config 
 	return ret ? ret : bit;
 }
 
-static int read_byte(const struct mm_gpio_data *d, const struct mm_gpio_config *cfg, uint8_t *val,
+static int read_byte(struct mm_gpio_data *d, const struct mm_gpio_config *cfg, uint8_t *val,
 		     bool ack)
 {
 	int bit;
@@ -187,16 +263,17 @@ static int read_byte(const struct mm_gpio_data *d, const struct mm_gpio_config *
 /* -EBUSY: someone else's transfer; -EIO: SDA held low with SCL high all along */
 static int bus_free(const struct mm_gpio_data *d, const struct mm_gpio_config *cfg)
 {
-	uint32_t idle_polls = US_TO_POLLS(d, cfg->bus_free_us) / 2; /* both lines: two polls */
-	uint32_t idle = 0;
+	uint32_t end = now() + us(d, cfg->bus_timeout_us);
+	uint32_t idle_since = now();
 	bool stuck = true;
 
-	for (uint32_t i = 0; i < US_TO_POLLS(d, cfg->bus_timeout_us) / 2; i++) {
+	while (before(end)) {
 		int scl = scl_get(cfg);
 		int sda = sda_get(cfg);
 
-		idle = scl && sda ? idle + 1 : 0;
-		if (idle >= idle_polls) {
+		if (!(scl && sda)) {
+			idle_since = now();
+		} else if (!before(idle_since + us(d, cfg->bus_free_us))) {
 			return 0;
 		}
 		stuck = stuck && scl && !sda;
@@ -205,7 +282,7 @@ static int bus_free(const struct mm_gpio_data *d, const struct mm_gpio_config *c
 }
 
 /* SCL high, SDA high -> SDA low -> SCL low */
-static int start(const struct mm_gpio_data *d, const struct mm_gpio_config *cfg)
+static int start(struct mm_gpio_data *d, const struct mm_gpio_config *cfg)
 {
 	unsigned int key = irq_lock();
 
@@ -214,49 +291,49 @@ static int start(const struct mm_gpio_data *d, const struct mm_gpio_config *cfg)
 		return -EAGAIN;
 	}
 	sda_set(cfg, 0);
-	hold(cfg, US_TO_POLLS(d, START_STOP_US));
-	scl_set(cfg, 0);
+	hold_until(now() + us(d, START_STOP_US));
+	scl_fall(d, cfg);
 	irq_unlock(key);
 	return 0;
 }
 
-static int restart(const struct mm_gpio_data *d, const struct mm_gpio_config *cfg)
+static int restart(struct mm_gpio_data *d, const struct mm_gpio_config *cfg)
 {
 	unsigned int key;
 	int ret;
 
 	sda_set(cfg, 1);
-	hold(cfg, d->t_low);
+	hold_until(d->scl_fell + d->t_low);
 	ret = scl_rise(d, cfg, &key);
 	if (ret) {
 		return ret;
 	}
-	hold(cfg, US_TO_POLLS(d, START_STOP_US));
+	hold_until(now() + us(d, START_STOP_US));
 	sda_set(cfg, 0);
-	hold(cfg, US_TO_POLLS(d, START_STOP_US));
-	scl_set(cfg, 0);
+	hold_until(now() + us(d, START_STOP_US));
+	scl_fall(d, cfg);
 	irq_unlock(key);
 	return 0;
 }
 
 /* A STOP up to its last edge: SCL high, SDA low */
-static void stop_begin(const struct mm_gpio_data *d, const struct mm_gpio_config *cfg)
+static void stop_begin(struct mm_gpio_data *d, const struct mm_gpio_config *cfg)
 {
 	unsigned int key;
 
 	sda_set(cfg, 0);
-	hold(cfg, d->t_low);
+	hold_until(d->scl_fell + d->t_low);
 	if (scl_rise(d, cfg, &key) == 0) {
 		irq_unlock(key);
 	}
-	hold(cfg, US_TO_POLLS(d, START_STOP_US));
+	hold_until(now() + us(d, START_STOP_US));
 }
 
-static void stop(const struct mm_gpio_data *d, const struct mm_gpio_config *cfg)
+static void stop(struct mm_gpio_data *d, const struct mm_gpio_config *cfg)
 {
 	stop_begin(d, cfg);
 	sda_set(cfg, 1);
-	hold(cfg, d->t_low);
+	hold_until(now() + d->t_low);
 }
 
 static void release(const struct mm_gpio_config *cfg)
@@ -265,21 +342,21 @@ static void release(const struct mm_gpio_config *cfg)
 	scl_set(cfg, 1);
 }
 
-static int recover(const struct mm_gpio_data *d, const struct mm_gpio_config *cfg)
+static int recover(struct mm_gpio_data *d, const struct mm_gpio_config *cfg)
 {
 	unsigned int key;
 
 	sda_set(cfg, 1);
 	for (int i = 0; i < RECOVERY_CLOCKS && !sda_get(cfg); i++) {
-		scl_set(cfg, 0);
-		hold(cfg, d->t_low);
+		scl_fall(d, cfg);
+		hold_until(d->scl_fell + d->t_low);
 		if (scl_rise(d, cfg, &key)) {
 			return -EIO;
 		}
 		irq_unlock(key);
-		hold(cfg, d->t_high);
+		hold_until(now() + d->t_high);
 	}
-	scl_set(cfg, 0);
+	scl_fall(d, cfg);
 	stop(d, cfg);
 	return sda_get(cfg) ? 0 : -EIO;
 }
@@ -314,8 +391,8 @@ static void pins_give(const struct mm_gpio_data *d, const struct mm_gpio_config 
 	release(cfg);
 }
 
-static int msgs_run(const struct mm_gpio_data *d, const struct mm_gpio_config *cfg,
-		    struct i2c_msg *msgs, uint8_t num_msgs, uint16_t addr)
+static int msgs_run(struct mm_gpio_data *d, const struct mm_gpio_config *cfg, struct i2c_msg *msgs,
+		    uint8_t num_msgs, uint16_t addr)
 {
 	bool prev_rd = false;
 	int ret = start(d, cfg);
@@ -403,15 +480,18 @@ static int mm_gpio_transfer(const struct device *dev, struct i2c_msg *msgs, uint
 static int mm_gpio_configure(const struct device *dev, uint32_t dev_config)
 {
 	struct mm_gpio_data *d = dev->data;
-	uint32_t period, low, high, cost_low, cost_high;
+	uint32_t period;
 	uint32_t rate;
+	uint32_t high_min_ns;
 
 	switch (I2C_SPEED_GET(dev_config)) {
 	case I2C_SPEED_STANDARD:
 		rate = I2C_BITRATE_STANDARD;
+		high_min_ns = 4000;
 		break;
 	case I2C_SPEED_FAST:
 		rate = I2C_BITRATE_FAST;
+		high_min_ns = 600;
 		break;
 	default:
 		return -ENOTSUP;
@@ -421,13 +501,10 @@ static int mm_gpio_configure(const struct device *dev, uint32_t dev_config)
 	}
 
 	k_mutex_lock(&d->lock, K_FOREVER);
-	period = DIV_ROUND_UP(MSEC_PER_SEC * d->polls_per_ms, rate);
-	low = period * LOW_SHARE / 100;
-	high = period - low;
-	cost_low = d->bit_cost / 3;
-	cost_high = d->bit_cost - cost_low;
-	d->t_low = low > cost_low ? low - cost_low : 0;
-	d->t_high = high > cost_high ? high - cost_high : 0;
+	period = DIV_ROUND_UP(USEC_PER_SEC * d->cycles_per_us, rate);
+	d->t_low = period * LOW_SHARE / 100 + 1;
+	d->t_high = period - d->t_low;
+	d->t_high_min = DIV_ROUND_UP(high_min_ns * d->cycles_per_us, NSEC_PER_USEC) + 1;
 	d->dev_config = dev_config;
 	k_mutex_unlock(&d->lock);
 	return 0;
@@ -494,72 +571,6 @@ static DEVICE_API(i2c, mm_gpio_api) = {
 	.recover_bus = mm_gpio_recover_bus,
 };
 
-static void run_hold(const struct mm_gpio_data *d, const struct mm_gpio_config *cfg, uint32_t n)
-{
-	hold(cfg, n);
-}
-
-static void run_bits(const struct mm_gpio_data *d, const struct mm_gpio_config *cfg, uint32_t n)
-{
-	int bit;
-
-	while (n-- > 0) {
-		(void)clock_bit(d, cfg, 1, false, &bit);
-	}
-}
-
-/* Runs of run() per millisecond, doubled until they last CALIBRATE_MS; the cycle counter runs
- * with interrupts locked
- */
-static uint32_t runs_per_ms(void (*run)(const struct mm_gpio_data *, const struct mm_gpio_config *,
-				       uint32_t),
-			    const struct mm_gpio_data *d, const struct mm_gpio_config *cfg)
-{
-	uint32_t hz = sys_clock_hw_cycles_per_sec();
-	uint32_t span = hz / (MSEC_PER_SEC / CALIBRATE_MS);
-	uint32_t n = 16;
-	uint32_t cycles;
-
-	do {
-		unsigned int key = irq_lock();
-		uint32_t start = k_cycle_get_32();
-
-		while (k_cycle_get_32() == start) {
-		}
-		start = k_cycle_get_32();
-		run(d, cfg, n);
-		cycles = k_cycle_get_32() - start;
-		irq_unlock(key);
-		n *= 2;
-	} while (cycles < span);
-
-	return MAX((uint32_t)((uint64_t)n / 2 * hz / ((uint64_t)cycles * MSEC_PER_SEC)), 1);
-}
-
-/* Before the target block has the pins, as inputs: the bits stay off the bus. A bus that is
- * not idle stretches the bits; then nothing is taken off the waits.
- */
-static void calibrate(struct mm_gpio_data *d, const struct mm_gpio_config *cfg)
-{
-	uint32_t bits_per_ms;
-
-	(void)gpio_pin_configure_dt(&cfg->scl, GPIO_INPUT);
-	(void)gpio_pin_configure_dt(&cfg->sda, GPIO_INPUT);
-	d->polls_per_ms = runs_per_ms(run_hold, d, cfg);
-	d->t_low = 0;
-	d->t_high = 0;
-	d->bit_cost = 0;
-	if (scl_get(cfg) && sda_get(cfg)) {
-		bits_per_ms = runs_per_ms(run_bits, d, cfg);
-		d->bit_cost = DIV_ROUND_UP(d->polls_per_ms, bits_per_ms);
-	}
-	if (d->bit_cost > d->polls_per_ms / 100) {
-		LOG_WRN("bus not idle at init, bit timing not corrected");
-		d->bit_cost = 0;
-	}
-	LOG_INF("%u SCL reads per ms, a bit costs %u", d->polls_per_ms, d->bit_cost);
-}
-
 static int mm_gpio_init(const struct device *dev)
 {
 	const struct mm_gpio_config *cfg = dev->config;
@@ -570,7 +581,7 @@ static int mm_gpio_init(const struct device *dev)
 		return -ENODEV;
 	}
 	k_mutex_init(&d->lock);
-	calibrate(d, cfg);
+	d->cycles_per_us = counter_init();
 	pins_to_target(cfg);
 	return mm_gpio_configure(dev, I2C_MODE_CONTROLLER |
 					      I2C_SPEED_SET(cfg->bitrate > I2C_BITRATE_STANDARD
@@ -578,6 +589,7 @@ static int mm_gpio_init(const struct device *dev)
 								    : I2C_SPEED_STANDARD));
 }
 
+/* clang-format off */
 #define MM_GPIO_INST(n)                                                                            \
 	IF_ENABLED(DT_INST_PINCTRL_HAS_NAME(n, default), (PINCTRL_DT_INST_DEFINE(n);))             \
 	static struct mm_gpio_data mm_gpio_data_##n;                                               \
@@ -594,5 +606,6 @@ static int mm_gpio_init(const struct device *dev)
 	};                                                                                         \
 	I2C_DEVICE_DT_INST_DEFINE(n, mm_gpio_init, NULL, &mm_gpio_data_##n, &mm_gpio_config_##n,   \
 				  POST_KERNEL, CONFIG_I2C_MM_GPIO_INIT_PRIORITY, &mm_gpio_api);
+/* clang-format on */
 
 DT_INST_FOREACH_STATUS_OKAY(MM_GPIO_INST)

@@ -16,6 +16,7 @@ config I2C_MM_GPIO
 	depends on DT_HAS_TWIXT_I2C_MM_GPIO_ENABLED
 	depends on GPIO
 	select I2C_TARGET
+	select TIMING_FUNCTIONS if !SOC_SERIES_RP2040
 	imply DEVICE_DEINIT_SUPPORT
 	help
 	  Software controller with arbitration on the pins of a target-only
