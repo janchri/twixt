@@ -4,5 +4,7 @@
 # For the pytest harnesses, on top of Zephyr's own requirements
 # (west packages pip --install)
 
-# MCUmgr (SMP) from the laptop: samples/smp
+# MCUmgr (SMP) from the laptop: the smp west runner (scripts/runners/smp.py),
+# which flashes a board under MCUboot, e.g. the Raspberry Pi Pico in twister
 smpclient==7.3.0
+smpmgr==0.19.1

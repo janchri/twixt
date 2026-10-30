@@ -1,0 +1,89 @@
+/*
+ * Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* The gateway on a Raspberry Pi Pico (-DMCU=gw): the bus on SDA GP4 (pin 6), SCL GP5 (pin 7), at
+ * 3.3 V. I2C0 is only the target, since the DesignWare block is not controller and target at
+ * once; the controller is software on the same pins (twixt,i2c-mm-gpio), and pinctrl-0 gives the
+ * pins back to I2C0. The ports to the host are USB CDC-ACM (src/gateway.c), "twixt pico":
+ * if00 the log, if02 MCUmgr to update the image under MCUboot, if04 the gateway's shell, if06
+ * board a, if08 board b.
+ */
+
+#include <zephyr/dt-bindings/i2c/i2c.h>
+
+/ {
+	chosen {
+		twixt,self = &TWIXT_SELF_LABEL;
+		zephyr,console = &usb_log;
+		zephyr,uart-mcumgr = &usb_mcumgr;
+	};
+
+	i2c-mm {
+		compatible = "twixt,i2c-mm-gpio";
+		target = <&i2c0>;
+		scl-gpios = <&gpio0 5 0>;
+		sda-gpios = <&gpio0 4 0>;
+		clock-frequency = <I2C_BITRATE_STANDARD>;
+		pinctrl-0 = <&i2c0_default>;
+		pinctrl-names = "default";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+#include "../twixt_mcus.dtsi"
+	};
+};
+
+&i2c0 {
+	clock-frequency = <I2C_BITRATE_STANDARD>;
+};
+
+&pinctrl {
+	i2c0_default: i2c0_default {
+		group1 {
+			pinmux = <I2C0_SDA_P4>, <I2C0_SCL_P5>;
+			input-enable;
+			input-schmitt-enable;
+			bias-pull-up; /* weak; the bus needs its own pull-ups */
+		};
+	};
+};
+
+&zephyr_udc0 {
+	/* The same order on every twixt Pico: if00 the log, if02 MCUmgr, if04 the gateway's shell,
+	 * then the boards. The log and MCUmgr wait for the host instead of losing data.
+	 */
+	usb_log: usb-log {
+		compatible = "zephyr,cdc-acm-uart";
+		label = "twixt log";
+		hw-flow-control;
+	};
+
+	usb_mcumgr: usb-mcumgr {
+		compatible = "zephyr,cdc-acm-uart";
+		label = "twixt mcumgr";
+		hw-flow-control;
+	};
+
+	host_gw: host-gw {
+		compatible = "zephyr,cdc-acm-uart";
+		label = "twixt gateway";
+		hw-flow-control;
+		status = "disabled";
+	};
+
+	host_a: host-a {
+		compatible = "zephyr,cdc-acm-uart";
+		label = "twixt board a";
+		status = "disabled";
+	};
+
+	host_b: host-b {
+		compatible = "zephyr,cdc-acm-uart";
+		label = "twixt board b";
+		status = "disabled";
+	};
+
+};

@@ -168,10 +168,16 @@ int i2c_mm_transfer(struct i2c_mm *mm, uint16_t addr, const void *req, size_t re
 			k_sleep(K_MSEC(1));
 			continue;
 		}
-		if ((ret != -EAGAIN && ret != -EBUSY) || sys_timepoint_expired(end)) {
+		if (ret != -EAGAIN && ret != -EBUSY) {
 			return ret;
 		}
-		LOG_WRN("0x%02x: request to 0x%02x attempt %u: %s, backing off", mm->target.address,
+		if (sys_timepoint_expired(end)) {
+			LOG_WRN("0x%02x: request to 0x%02x: %s after %u attempts",
+				mm->target.address, addr,
+				ret == -EAGAIN ? "lost arbitration" : "bus busy", i);
+			return ret;
+		}
+		LOG_DBG("0x%02x: request to 0x%02x attempt %u: %s, backing off", mm->target.address,
 			addr, i, ret == -EAGAIN ? "lost arbitration" : "bus busy");
 		/* out of the winner's START window, then wait for its STOP */
 		k_sleep(K_MSEC(2 * MIN(i, 4)));

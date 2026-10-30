@@ -9,6 +9,9 @@ build:
   settings:
     dts_root: .
 
+runners:
+  - file: scripts/runners/smp.py
+
 samples:
   - samples
 

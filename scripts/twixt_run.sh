@@ -8,12 +8,15 @@
 #
 #   scripts/twixt_run.sh <sample> <mcu>... [-- <native_sim options>]
 #
-#   scripts/twixt_run.sh samples/hello a b
-#   scripts/twixt_run.sh samples/hello a b -- -stop_at=3
+#   scripts/twixt_run.sh samples/ping a b
+#   scripts/twixt_run.sh samples/ping a b -- -stop_at=3
 #
 #   BUILD_DIR=dir       where the builds, logs and flash files go
 #                       (default: ./build-twixt-<sample>)
 #   SKIP_BUILD=1        run what was built before
+#   CMAKE_ARGS="..."    more arguments for CMake, as -DCONFIG_TWIXT_LOG_LEVEL_DBG=y
+#                       (another BUILD_DIR for another variant: CMake keeps
+#                       its cache)
 #   GDB="<mcu>..."      build these MCUs for debugging (<BUILD_DIR>/<mcu>-gdb)
 #                       and run them under gdbserver :2345, :2346 ..., each
 #                       linked as /tmp/twixt-gdb-<port>.exe
@@ -55,7 +58,9 @@ if [[ -z ${SKIP_BUILD:-} ]]; then
 	for m in "${mcus[@]}"; do
 		opt=()
 		gdb_port "$m" > /dev/null && opt=(-DCONFIG_DEBUG_OPTIMIZATIONS=y)
+		# shellcheck disable=SC2086 # CMAKE_ARGS: one argument per word
 		west build -b native_sim -d "$(dir "$m")" "$sample" -- -DMCU="$m" "${opt[@]}" \
+			${CMAKE_ARGS:-} \
 			> "$out/$m.build.log" 2>&1 &
 		builds+=("$!")
 	done

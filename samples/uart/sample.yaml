@@ -32,10 +32,28 @@ tests:
     platform_allow: native_sim
     extra_args: MCU=c
     build_only: true
-  # The gateway on a Raspberry Pi Pico, on real I2C
-  sample.twixt.uart.gateway_hw:
-    platform_allow: rpi_pico
+  # On real boards (README): board b on an nRF7002 DK, the DUT, and the gateway
+  # on a Raspberry Pi Pico; with --device-testing, twister flashes both and
+  # pytest/test_uart.py uses b's shell on the gateway's USB port
+  sample.twixt.uart.nrf7002dk:
+    platform_allow: nrf7002dk/nrf5340/cpuapp
     integration_platforms:
-      - rpi_pico
+      - nrf7002dk/nrf5340/cpuapp
+    extra_args: MCU=b
+    harness: pytest
+    harness_config:
+      required_devices:
+        - platform: rpi_pico/rp2040/mcuboot
+          application: sample.twixt.uart.rpi_pico
+  # The gateway on the Pico: the image alone, signed for the MCUboot that is on
+  # the Pico (README), so that the smp runner can send it over MCUmgr
+  sample.twixt.uart.rpi_pico:
+    platform_allow: rpi_pico/rp2040/mcuboot
+    integration_platforms:
+      - rpi_pico/rp2040/mcuboot
     extra_args: MCU=gw
+    extra_configs:
+      - CONFIG_BOOTLOADER_MCUBOOT=y
+      - CONFIG_MCUBOOT_BOOTLOADER_MODE_SWAP_USING_OFFSET=y
+      - CONFIG_MCUBOOT_SIGNATURE_KEY_FILE="bootloader/mcuboot/root-rsa-2048.pem"
     build_only: true

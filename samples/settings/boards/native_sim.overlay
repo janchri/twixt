@@ -16,13 +16,5 @@
 	compatible = "twixt,native-i2c-mm";
 	bus-id = <0>;
 
-	mcu_a: mcu-a@10 {
-		compatible = "twixt,mcu";
-		reg = <0x10>;
-	};
-
-	mcu_b: mcu-b@11 {
-		compatible = "twixt,mcu";
-		reg = <0x11>;
-	};
+#include "../twixt_mcus.dtsi"
 };

@@ -50,6 +50,7 @@
 #define TWIXT_SERVICE_ECHO     0x01 /**< <twixt/echo.h> */
 #define TWIXT_SERVICE_SETTINGS 0x02 /**< <twixt/settings.h> */
 #define TWIXT_SERVICE_UART     0x10 /**< twixt,uart */
+#define TWIXT_SERVICE_SMP      0x20 /**< <twixt/smp.h> */
 #define TWIXT_SERVICE_APP      0x80 /**< First id for applications */
 /** @} */
 

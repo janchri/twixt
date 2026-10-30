@@ -6,4 +6,4 @@ cmake_minimum_required(VERSION 3.20.0)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(twixt_test)
 
-target_sources(app PRIVATE src/bus.c src/settings.c)
+target_sources(app PRIVATE src/bus.c src/settings.c src/smp.c)

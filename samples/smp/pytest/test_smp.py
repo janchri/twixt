@@ -1,32 +1,31 @@
 # Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 #
-# Twister builds the board and the gateway (sample.yaml) and starts the gateway;
-# this test starts the board, and sends it SMP requests on the gateway's PTY.
+# Twister builds a and b (sample.yaml) and starts a; this test starts b next to
+# it, on the same virtual bus, and checks that b got a's MCUmgr echo.
+#
+# On real boards (--device-testing), b on the nRF7002 DK is the DUT and a on
+# the Pico a required device, both flashed by twister; the test reads both logs.
 
-import asyncio
 import sys
 from pathlib import Path
 
-from smpclient import SMPClient
-from smpclient.requests.os_management import EchoWrite, MCUMgrParametersRead
-from smpclient.transport.serial import SMPSerialTransport
-from twister_harness import DeviceAdapter
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts' / 'pylib'))
-from twixt_bench import TIMEOUT_S, gateway_ptys  # noqa: E402
+from twixt_bench import TIMEOUT_S, real_boards, start_mcus  # noqa: E402
 
 BUS_ID = 3  # boards/native_sim.overlay
+HW_TIMEOUT_S = 15  # b repeats every 2 s
+B_GETS = r'MCUmgr echo from 0x10: hello over the bus'
 
 
-async def smp(pty: str):
-    async with SMPClient(SMPSerialTransport(), pty, timeout_s=TIMEOUT_S) as client:
-        echo = await client.request(EchoWrite(d='hello over the bus'))
-        assert echo.r == 'hello over the bus', echo
-        params = await client.request(MCUMgrParametersRead())
-        assert params.buf_size > 0, params
+def test_smp(request, required_build_dirs: list[str]):
+    if boards := real_boards(request):
+        b, _ = boards
+        b.readlines_until(regex=B_GETS, timeout=HW_TIMEOUT_S)  # a's MCUmgr answered
+        return
 
-
-def test_smp(required_build_dirs: list[str], unlaunched_dut: DeviceAdapter):
-    with gateway_ptys(unlaunched_dut, required_build_dirs, BUS_ID, ['a']) as paths:
-        asyncio.run(smp(paths['a']))
+    a = request.getfixturevalue('unlaunched_dut')
+    with start_mcus(required_build_dirs, BUS_ID) as (b,):
+        a.launch()
+        a.readlines_until(regex=r'MCUmgr on the twixt service', timeout=TIMEOUT_S)
+        b.wait_for(B_GETS)

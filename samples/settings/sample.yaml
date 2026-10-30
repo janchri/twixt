@@ -4,20 +4,45 @@
 sample:
   name: Settings over twixt
 common:
-  platform_allow:
-    - native_sim
-  integration_platforms:
-    - native_sim
   tags:
     - i2c
     - settings
 tests:
   # MCU a, started by twister; pytest/test_settings.py starts b next to it
   sample.twixt.settings:
+    platform_allow: native_sim
+    integration_platforms:
+      - native_sim
     extra_args: MCU=a
     harness: pytest
     required_applications:
       - name: sample.twixt.settings.mcu_b
   sample.twixt.settings.mcu_b:
+    platform_allow: native_sim
     extra_args: MCU=b
+    build_only: true
+  # On real boards (README): b on an nRF7002 DK, the DUT, and a on a Raspberry
+  # Pico; with --device-testing, twister flashes both and pytest/test_settings.py
+  # reads both logs
+  sample.twixt.settings.nrf7002dk:
+    platform_allow: nrf7002dk/nrf5340/cpuapp
+    integration_platforms:
+      - nrf7002dk/nrf5340/cpuapp
+    extra_args: MCU=b
+    harness: pytest
+    harness_config:
+      required_devices:
+        - platform: rpi_pico/rp2040/mcuboot
+          application: sample.twixt.settings.rpi_pico
+  # a on the Pico: the image alone, signed for the MCUboot that is on the Pico
+  # (README), so that the smp runner can send it over MCUmgr
+  sample.twixt.settings.rpi_pico:
+    platform_allow: rpi_pico/rp2040/mcuboot
+    integration_platforms:
+      - rpi_pico/rp2040/mcuboot
+    extra_args: MCU=a
+    extra_configs:
+      - CONFIG_BOOTLOADER_MCUBOOT=y
+      - CONFIG_MCUBOOT_BOOTLOADER_MODE_SWAP_USING_OFFSET=y
+      - CONFIG_MCUBOOT_SIGNATURE_KEY_FILE="bootloader/mcuboot/root-rsa-2048.pem"
     build_only: true

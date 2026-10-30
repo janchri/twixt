@@ -1,0 +1,39 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+#
+# Twister hardware map for twixt's tests on real boards: an nRF7002 DK and a
+# Raspberry Pi Pico on one bus (README.md, "On real boards"). Copy it, change
+# the lines marked "yours", and run every hardware test:
+#
+#   west twister --device-testing --hardware-map twixt-hw.yaml \
+#     -p nrf7002dk/nrf5340/cpuapp -p rpi_pico/rp2040/mcuboot -T twixt
+#
+# Both platforms are needed: twister builds the Pico's image only for a
+# platform of the run. Use /dev/serial/by-id/ paths: /dev/ttyACM* numbers
+# change with every plug and every update.
+
+# The DUT of each test: board b, flashed with nrfutil
+- platform: nrf7002dk/nrf5340/cpuapp
+  # yours: the DK's J-Link serial number, as in `nrfutil device list`
+  id: '1050750299'
+  product: J-Link
+  runner: nrfutil
+  # yours: the DK's VCOM with the application's log
+  serial: /dev/serial/by-id/usb-SEGGER_J-Link_001050750299-if02
+  connected: true
+
+# A required device of each test: board a or the gateway, flashed over MCUmgr
+# with twixt's smp runner (scripts/runners/smp.py). MCUboot must be on the
+# Pico already, and a twixt image, so that it is the USB device "twixt pico":
+# if00 the log, if02 MCUmgr, if04 a gateway's shell, if06, if08, if0a the
+# boards a, b, c.
+- platform: rpi_pico/rp2040/mcuboot
+  id: twixt-pico
+  product: twixt pico
+  runner: smp
+  runner_params:
+    - --port=/dev/serial/by-id/usb-twixt_twixt_pico-if02
+  serial: /dev/serial/by-id/usb-twixt_twixt_pico-if00
+  # The update resets the Pico, which enumerates again: open its log after it
+  flash_before: true
+  connected: true

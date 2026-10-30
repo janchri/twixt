@@ -23,7 +23,7 @@ LOG_MODULE_REGISTER(gateway, LOG_LEVEL_INF);
 USBD_DEVICE_DEFINE(gw_usbd, DEVICE_DT_GET(DT_NODELABEL(zephyr_udc0)), 0x2fe3, 0x0004);
 USBD_DESC_LANG_DEFINE(gw_lang);
 USBD_DESC_MANUFACTURER_DEFINE(gw_mfr, "twixt");
-USBD_DESC_PRODUCT_DEFINE(gw_product, "twixt console gateway");
+USBD_DESC_PRODUCT_DEFINE(gw_product, "twixt pico");
 USBD_DESC_CONFIG_DEFINE(gw_cfg_desc, "FS Configuration");
 USBD_CONFIGURATION_DEFINE(gw_config, 0, 125, &gw_cfg_desc);
 

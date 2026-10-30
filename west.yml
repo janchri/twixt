@@ -19,10 +19,13 @@ manifest:
       remote: zephyrproject
       revision: v4.5.0-rc2
       import:
-        # What the samples need: Pico gateway, littlefs, MCUboot + MCUmgr
+        # What the samples need: the Raspberry Pi Pico and the nRF7002 DK,
+        # MCUboot (with its crypto) and MCUmgr
         name-allowlist:
           - cmsis_6
+          - hal_nordic
           - hal_rpi_pico
-          - littlefs
+          - mbedtls
           - mcuboot
+          - tf-psa-crypto
           - zcbor

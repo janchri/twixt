@@ -12,8 +12,9 @@
 
 #include <twixt/twixt.h>
 #include <twixt/echo.h>
+#include <twixt/stress.h>
 
-#define TARGETS_MAX 4
+#define TARGETS_MAX TWIXT_STRESS_TARGETS_MAX
 #define ERRNOS_MAX  4
 
 struct target {
@@ -99,11 +100,84 @@ static void run(void *p1, void *p2, void *p3)
 	atomic_set(&running, 0);
 }
 
+int twixt_stress_start(uint32_t interval, uint32_t duration_ms, const uint8_t *addrs, size_t n)
+{
+	if (n > TARGETS_MAX) {
+		return -EINVAL;
+	}
+	if (atomic_get(&running)) {
+		return -EBUSY;
+	}
+	if (started) {
+		k_thread_join(&thread, K_FOREVER);
+	}
+
+	K_SPINLOCK(&lock) {
+		memset(targets, 0, sizeof(targets));
+		num_targets = 0;
+		for (size_t i = 0; i < n; i++) {
+			if (addrs[i] != twixt_self_addr()) {
+				targets[num_targets].addr = addrs[i];
+				targets[num_targets].first_fail_ms = -1;
+				num_targets++;
+			}
+		}
+		interval_ms = interval;
+		start_ms = k_uptime_get();
+		stop_ms = 0;
+	}
+	if (num_targets == 0) {
+		return -ENOENT;
+	}
+	deadline = sys_timepoint_calc(duration_ms ? K_MSEC(duration_ms) : K_FOREVER);
+	started = true;
+	atomic_set(&running, 1);
+	k_thread_create(&thread, stack, K_THREAD_STACK_SIZEOF(stack), run, NULL, NULL, NULL,
+			K_LOWEST_APPLICATION_THREAD_PRIO, 0, K_NO_WAIT);
+	k_thread_name_set(&thread, "twixt_stress");
+	return 0;
+}
+
+void twixt_stress_stop(void)
+{
+	atomic_set(&running, 0);
+	if (started) {
+		k_thread_join(&thread, K_FOREVER);
+	}
+}
+
+bool twixt_stress_running(void)
+{
+	return atomic_get(&running) != 0;
+}
+
+size_t twixt_stress_get(struct twixt_stress_counts *counts, size_t max)
+{
+	size_t n;
+
+	K_SPINLOCK(&lock) {
+		n = MIN(num_targets, max);
+		for (size_t i = 0; i < n; i++) {
+			counts[i] = (struct twixt_stress_counts){
+				.addr = targets[i].addr,
+				.ok = targets[i].ok,
+				.wrong = targets[i].wrong,
+				.err = targets[i].err,
+			};
+		}
+	}
+	return n;
+}
+
+#ifdef CONFIG_TWIXT_SHELL
+
 static int cmd_start(const struct shell *sh, size_t argc, char **argv)
 {
+	uint8_t addrs[TARGETS_MAX];
 	int err = 0;
 	unsigned long ms = shell_strtoul(argv[1], 0, &err);
 	unsigned long secs = err ? 0 : shell_strtoul(argv[2], 0, &err);
+	int ret;
 
 	if (err) {
 		shell_error(sh, "not a number: %s %s", argv[1], argv[2]);
@@ -113,41 +187,25 @@ static int cmd_start(const struct shell *sh, size_t argc, char **argv)
 		shell_error(sh, "at most %d addresses", TARGETS_MAX);
 		return -EINVAL;
 	}
-	if (atomic_get(&running)) {
-		shell_error(sh, "already running");
-		return -EBUSY;
-	}
-
-	if (started) {
-		k_thread_join(&thread, K_FOREVER);
-	}
-
-	memset(targets, 0, sizeof(targets));
 	for (size_t i = 3; i < argc; i++) {
-		if (twixt_shell_parse_addr(sh, argv[i], &targets[i - 3].addr)) {
+		if (twixt_shell_parse_addr(sh, argv[i], &addrs[i - 3])) {
 			return -EINVAL;
 		}
-		targets[i - 3].first_fail_ms = -1;
 	}
-	num_targets = argc - 3;
-	interval_ms = ms;
-	deadline = sys_timepoint_calc(secs ? K_SECONDS(secs) : K_FOREVER);
-	start_ms = k_uptime_get();
-	stop_ms = 0;
-	started = true;
-	atomic_set(&running, 1);
-	k_thread_create(&thread, stack, K_THREAD_STACK_SIZEOF(stack), run, NULL, NULL, NULL,
-			K_LOWEST_APPLICATION_THREAD_PRIO, 0, K_NO_WAIT);
-	k_thread_name_set(&thread, "twixt_stress");
-	return 0;
+	ret = twixt_stress_start(ms, secs * MSEC_PER_SEC, addrs, argc - 3);
+	if (ret == -ENOENT) {
+		shell_print(sh, "no targets besides 0x%02x", twixt_self_addr());
+		return 0;
+	}
+	if (ret == -EBUSY) {
+		shell_error(sh, "already running");
+	}
+	return ret;
 }
 
 static int cmd_stop(const struct shell *sh, size_t argc, char **argv)
 {
-	atomic_set(&running, 0);
-	if (started) {
-		k_thread_join(&thread, K_FOREVER);
-	}
+	twixt_stress_stop();
 	return 0;
 }
 
@@ -170,8 +228,8 @@ static int cmd_show(const struct shell *sh, size_t argc, char **argv)
 		int pos = 0;
 
 		for (int j = 0; j < ERRNOS_MAX && t[i].errnos[j].count; j++) {
-			pos += snprintf(&errs[pos], sizeof(errs) - pos, " %d:%u", t[i].errnos[j].err,
-					t[i].errnos[j].count);
+			pos += snprintf(&errs[pos], sizeof(errs) - pos, " %d:%u",
+					t[i].errnos[j].err, t[i].errnos[j].count);
 		}
 		if (t[i].other) {
 			snprintf(&errs[pos], sizeof(errs) - pos, " other:%u", t[i].other);
@@ -181,18 +239,23 @@ static int cmd_show(const struct shell *sh, size_t argc, char **argv)
 			    t[i].err ? errs + 1 : "", t[i].max_us,
 			    t[i].ok ? (uint32_t)(t[i].sum_us / t[i].ok) : 0);
 		if (t[i].err || t[i].wrong) {
-			shell_print(sh, "        first failure at %lld ms", t[i].first_fail_ms - start_ms);
+			shell_print(sh, "        first failure at %lld ms",
+				    t[i].first_fail_ms - start_ms);
 		}
 	}
 	return 0;
 }
 
 SHELL_STATIC_SUBCMD_SET_CREATE(stress_cmds,
-	SHELL_CMD_ARG(start, NULL,
-		      "<interval_ms> <seconds> <addr>...: echo requests round-robin; 0 s: until stop",
-		      cmd_start, 4, TARGETS_MAX - 1),
-	SHELL_CMD_ARG(stop, NULL, "stop sending", cmd_stop, 1, 0),
-	SHELL_SUBCMD_SET_END);
+			       SHELL_CMD_ARG(start, NULL,
+					     "<interval_ms> <seconds> <addr>...: echo requests "
+					     "round-robin, own address skipped; "
+					     "0 s: until stop",
+					     cmd_start, 4, TARGETS_MAX - 1),
+			       SHELL_CMD_ARG(stop, NULL, "stop sending", cmd_stop, 1, 0),
+			       SHELL_SUBCMD_SET_END);
 
 SHELL_SUBCMD_ADD((twixt), stress, &stress_cmds, "echo load: start, stop; alone: the counts",
 		 cmd_show, 1, 0);
+
+#endif /* CONFIG_TWIXT_SHELL */

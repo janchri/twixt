@@ -1,0 +1,48 @@
+/*
+ * Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* The gateway: per board a UART over the bus, bridged to a port to the host, host_<board>; its
+ * own shell on host_gw. The board's overlay (boards/) has the ports, disabled: PTYs on native_sim,
+ * USB CDC-ACM on the Raspberry Pi Pico.
+ */
+
+/ {
+	chosen {
+		zephyr,shell-uart = &host_gw;
+	};
+
+	bus_uart_a: bus-uart-a {
+		compatible = "twixt,uart";
+		peer = <&mcu_a>;
+	};
+
+	bridge-a {
+		compatible = "zephyr,uart-bridge";
+		peers = <&bus_uart_a &host_a>;
+	};
+
+	bus_uart_b: bus-uart-b {
+		compatible = "twixt,uart";
+		peer = <&mcu_b>;
+	};
+
+	bridge-b {
+		compatible = "zephyr,uart-bridge";
+		peers = <&bus_uart_b &host_b>;
+	};
+};
+
+&host_a {
+	status = "okay";
+};
+
+&host_b {
+	status = "okay";
+};
+
+&host_gw {
+	status = "okay";
+};

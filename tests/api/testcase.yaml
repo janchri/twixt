@@ -10,3 +10,4 @@ tests:
     tags:
       - i2c
       - settings
+      - mcumgr

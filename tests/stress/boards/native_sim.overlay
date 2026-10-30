@@ -4,11 +4,32 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/* The bus on native_sim (twixt,native-i2c-mm); TWIXT_SELF_LABEL is mcu_<MCU> */
+/* The bus on native_sim (twixt,native-i2c-mm); TWIXT_SELF_LABEL is mcu_<MCU>. The gateway's
+ * ports to the host are PTYs (gateway.overlay enables them):
+ * "pty-a connected to pseudotty: /dev/pts/N"
+ */
 
 / {
 	chosen {
 		twixt,self = &TWIXT_SELF_LABEL;
+	};
+
+	host_a: pty-a {
+		compatible = "zephyr,native-pty-uart";
+		current-speed = <0>;
+		status = "disabled";
+	};
+
+	host_b: pty-b {
+		compatible = "zephyr,native-pty-uart";
+		current-speed = <0>;
+		status = "disabled";
+	};
+
+	host_gw: pty-gw {
+		compatible = "zephyr,native-pty-uart";
+		current-speed = <0>;
+		status = "disabled";
 	};
 };
 
@@ -21,18 +42,5 @@
 	 */
 	start-window-us = <2000>;
 
-	mcu_a: mcu-a@10 {
-		compatible = "twixt,mcu";
-		reg = <0x10>;
-	};
-
-	mcu_b: mcu-b@11 {
-		compatible = "twixt,mcu";
-		reg = <0x11>;
-	};
-
-	mcu_c: mcu-c@12 {
-		compatible = "twixt,mcu";
-		reg = <0x12>;
-	};
+#include "../twixt_mcus.dtsi"
 };

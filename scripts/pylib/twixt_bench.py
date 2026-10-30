@@ -89,6 +89,24 @@ def start_mcus(build_dirs: list[str], bus_id: int, args=lambda i: []) -> Iterato
             mcu.stop()
 
 
+def real_boards(request) -> list | None:
+    """On real boards (twister --device-testing): the DUT and then the required devices, flashed
+    and running; None on native_sim"""
+    if request.getfixturevalue('twister_harness_config').devices[0].type != 'hardware':
+        return None
+    duts = request.getfixturevalue('unlaunched_duts')
+    for dut in duts:
+        dut.launch()
+    return duts
+
+
+def pico_port(dut, interface: int) -> str:
+    """Another USB port of a twixt Pico, from its log port (-if00) in the hardware map: if02
+    MCUmgr, if04 a gateway's shell, then the boards: 6 a, 8 b, 10 c"""
+    log = dut.device_config.serial_configs[0].port
+    return re.sub(r'-if[0-9a-f]{2}$', f'-if{interface:02x}', log)  # interface numbers in hex
+
+
 PTY = re.compile(r'pty-(\w+) connected to pseudotty: (\S+)')
 
 

@@ -1,47 +1,47 @@
 # Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 #
-# Three MCUs on one virtual bus, sending at the same moments: twister builds a,
-# b and c (testcase.yaml) and starts a as the DUT; this test starts b and c,
-# waits for the verdict of every MCU, and checks that the requests sent and
-# served add up.
+# The echo load of every combination of senders against every combination of
+# targets: each sender runs "twixt stress start <interval> <seconds> <targets>"
+# in its shell, at the same time, and the counts come from "twixt stress". The
+# senders skip their own address. A cell fails on a wrong answer or a shell
+# that does not answer; errors (retries exhausted) are only counted. After a
+# hang the other cells are skipped. The matrix is printed at the end.
 
 import re
-import sys
-from pathlib import Path
+import time
 
 import pytest
-from twister_harness import DeviceAdapter
+from conftest import MCUS, cells, name
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts' / 'pylib'))
-from twixt_bench import start_mcus  # noqa: E402
-
-BUS_ID = 4  # boards/native_sim.overlay
-VERDICT = r'all settings verified|settings check failed'
-STATS = re.compile(r'sent (\d+) requests, served (\d+) requests')
-TIMEOUT_S = 30
+STATS = re.compile(r'0x([0-9a-f]{2}): ok (\d+), wrong (\d+), err (\d+)')
 
 
-def test_stress(required_build_dirs: list[str], unlaunched_dut: DeviceAdapter):
-    # every MCU its own seed, for its own random choices
-    with start_mcus(required_build_dirs, BUS_ID, lambda i: [f'--seed={2 + i}']) as peers:
-        unlaunched_dut.launch()  # after the peers: all three join the bus within ~1 s anyway
+def test_stress(shells, load, senders, targets):
+    if load['hang']:
+        pytest.skip(f'no shell since {load["hang"]}')
+    cell = f'{name(senders)} -> {name(targets)}'
+    addrs = ' '.join(f'0x{MCUS[t]:02x}' for t in targets)
 
-        # the statistics come just before the verdict
-        dut_lines = unlaunched_dut.readlines_until(regex=VERDICT, timeout=TIMEOUT_S)
-        for peer in peers:
-            peer.wait_for(VERDICT, timeout=TIMEOUT_S)
-        outputs = {'a': '\n'.join(dut_lines)} | {p.name: p.output() for p in peers}
+    try:
+        for s in senders:
+            shells[s].run(f'twixt stress start {load["interval"]} {load["seconds"]} {addrs}')
+        time.sleep(load['seconds'] + 0.5)
+        outs = []
+        for s in senders:
+            out = shells[s].run('twixt stress')
+            if 'running' in out:
+                shells[s].run('twixt stress stop')
+                out = shells[s].run('twixt stress')
+            outs.append(out)
+    except AssertionError:
+        cells[(senders, targets)] = 'HANG'
+        load['hang'] = cell
+        raise
 
-    for name, out in outputs.items():
-        if 'all settings verified' not in out:
-            pytest.fail(f'{name} failed:\n{out}')
-
-    sent = served = 0
-    for name, out in outputs.items():
-        m = STATS.search(out)
-        assert m, f'{name}: no statistics'
-        sent += int(m[1])
-        served += int(m[2])
-    assert sent == served, f'{sent} requests sent, {served} served'
-    assert sent > 0
+    ok = wrong = err = 0
+    for out in outs:
+        for _, o, w, e in STATS.findall(out):
+            ok, wrong, err = ok + int(o), wrong + int(w), err + int(e)
+    cells[(senders, targets)] = f'{ok}/{wrong}/{err}'
+    assert wrong == 0, f'{cell}: {wrong} wrong answers ({ok} ok, {err} errors)'

@@ -5,6 +5,14 @@ cmake_minimum_required(VERSION 3.20.0)
 
 # One image per MCU: a, b and c are boards with a shell, gw is the console gateway.
 # MCU picks which MCU of boards/native_sim.overlay this image is.
+# Under sysbuild (the Raspberry Pi Pico), -DMCU is in the sysbuild cache, not in this image's
+if(SYSBUILD_CACHE)
+  file(STRINGS ${SYSBUILD_CACHE} sysbuild_mcu REGEX "^MCU:")
+  if(sysbuild_mcu)
+    string(REGEX REPLACE "^MCU:[A-Z]*=" "" sysbuild_mcu "${sysbuild_mcu}")
+    set(MCU ${sysbuild_mcu} CACHE STRING "" FORCE)
+  endif()
+endif()
 set(MCU a CACHE STRING "MCU to build: a, b, c or gw")
 if(MCU STREQUAL "gw")
   set(role gateway)

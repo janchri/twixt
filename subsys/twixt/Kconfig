@@ -38,20 +38,45 @@ config TWIXT_ECHO
 	  <twixt/echo.h>.
 
 config TWIXT_STRESS
-	bool "Load command"
-	depends on TWIXT_SHELL
+	bool "Echo load"
 	depends on TWIXT_ECHO
 	help
-	  "twixt stress start <interval_ms> <seconds> <addr>..." sends echo
-	  requests round-robin from a thread for <seconds> (0: until
-	  "twixt stress stop"), with every length up to the limit, and checks
-	  every answer byte. "twixt stress" prints the counts. The MCUs at
-	  <addr> need CONFIG_TWIXT_ECHO.
+	  A thread sends echo requests round-robin, with every length up to
+	  the limit, and checks every answer byte. See <twixt/stress.h>. With
+	  CONFIG_TWIXT_SHELL also "twixt stress start <interval_ms> <seconds>
+	  <addr>..." (0 s: until "twixt stress stop"), and "twixt stress" for
+	  the counts. The targets need CONFIG_TWIXT_ECHO.
 
 config TWIXT_STRESS_STACK_SIZE
 	int "Stack of the load thread"
 	default 1024
 	depends on TWIXT_STRESS
+
+config TWIXT_SMP
+	bool "MCUmgr service"
+	depends on MCUMGR
+	select CRC if TWIXT_SMP_CRC
+	help
+	  MCUmgr (SMP) over the bus: this MCU's MCUmgr answers requests from
+	  the others, and twixt_smp_send() sends packets to them. See
+	  <twixt/smp.h>.
+
+if TWIXT_SMP
+
+config TWIXT_SMP_CRC
+	bool "CRC-16 over each packet"
+	default y
+	help
+	  The same on every MCU of the bus. A packet with a wrong CRC is
+	  dropped; the sender of a request then times out.
+
+config TWIXT_SMP_PEERS
+	int "Packets coming in at the same time"
+	default 4
+	help
+	  One per MCU sending to this one at once.
+
+endif # TWIXT_SMP
 
 rsource "Kconfig.settings"
 

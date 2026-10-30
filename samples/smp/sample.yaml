@@ -4,21 +4,45 @@
 sample:
   name: MCUmgr over twixt
 common:
-  platform_allow:
-    - native_sim
-  integration_platforms:
-    - native_sim
   tags:
     - i2c
     - mcumgr
 tests:
-  # The gateway, started by twister; pytest/test_smp.py starts the board next
-  # to it and talks SMP to it through the gateway's PTY
+  # MCU a, started by twister; pytest/test_smp.py starts b next to it
   sample.twixt.smp:
-    extra_args: MCU=gw
+    platform_allow: native_sim
+    integration_platforms:
+      - native_sim
+    extra_args: MCU=a
     harness: pytest
     required_applications:
-      - name: sample.twixt.smp.mcu_a
-  sample.twixt.smp.mcu_a:
+      - name: sample.twixt.smp.mcu_b
+  sample.twixt.smp.mcu_b:
+    platform_allow: native_sim
+    extra_args: MCU=b
+    build_only: true
+  # On real boards (README): b on an nRF7002 DK, the DUT, and a on a Raspberry
+  # Pico; with --device-testing, twister flashes both and pytest/test_smp.py
+  # reads both logs
+  sample.twixt.smp.nrf7002dk:
+    platform_allow: nrf7002dk/nrf5340/cpuapp
+    integration_platforms:
+      - nrf7002dk/nrf5340/cpuapp
+    extra_args: MCU=b
+    harness: pytest
+    harness_config:
+      required_devices:
+        - platform: rpi_pico/rp2040/mcuboot
+          application: sample.twixt.smp.rpi_pico
+  # a on the Pico: the image alone, signed for the MCUboot that is on the Pico
+  # (README), so that the smp runner can send it over MCUmgr
+  sample.twixt.smp.rpi_pico:
+    platform_allow: rpi_pico/rp2040/mcuboot
+    integration_platforms:
+      - rpi_pico/rp2040/mcuboot
     extra_args: MCU=a
+    extra_configs:
+      - CONFIG_BOOTLOADER_MCUBOOT=y
+      - CONFIG_MCUBOOT_BOOTLOADER_MODE_SWAP_USING_OFFSET=y
+      - CONFIG_MCUBOOT_SIGNATURE_KEY_FILE="bootloader/mcuboot/root-rsa-2048.pem"
     build_only: true
