@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 #
-# Coding style, the pre-commit hooks (.pre-commit-config.yaml): clang-format
+# Coding style and commit messages, for the pre-commit hooks and CI: clang-format
 # and ruff as Zephyr's CI uses them (zephyr/scripts/requirements-actions.txt)
 #
 #   pip install -r requirements-dev.txt
@@ -10,3 +10,4 @@ pre-commit==4.7.0
 pre-commit-hooks==6.0.0
 clang-format==22.1.1
 ruff==0.14.2
+gitlint-core==0.19.1

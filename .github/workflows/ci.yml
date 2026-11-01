@@ -17,6 +17,45 @@ permissions:
   contents: read
 
 jobs:
+  style:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements-dev.txt
+
+      - name: clang-format
+        if: ${{ !cancelled() }}
+        run: git ls-files '*.c' '*.h' | xargs clang-format --dry-run --Werror
+
+      - name: ruff check
+        if: ${{ !cancelled() }}
+        run: ruff check .
+
+      - name: ruff format
+        if: ${{ !cancelled() }}
+        run: ruff format --check .
+
+      - name: Commit messages
+        if: ${{ !cancelled() }}
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          # A new branch or a force push has no usable base: check its last commit
+          if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            BASE="$HEAD~1"
+          fi
+          gitlint --commits "$BASE..$HEAD"
+
   twister:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
