@@ -44,7 +44,7 @@ def ports(config) -> dict[str, str]:
 def mcus(config) -> list[str]:
     harness = getattr(config, 'twister_harness_config', None)
     if harness and harness.devices and harness.devices[0].type == 'hardware':
-        return ['nrf', 'pico']  # testcase.yaml: twixt.stress.nrf7002dk
+        return ['nrf', 'pico']  # tests.yaml: twixt.stress.nrf7002dk
     return list(ports(config)) or list(MCUS)
 
 

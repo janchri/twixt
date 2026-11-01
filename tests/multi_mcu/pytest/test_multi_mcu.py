@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 #
-# Two MCUs use each of twixt's services on the other. Twister builds them (testcase.yaml) and
+# Two MCUs use each of twixt's services on the other. Twister builds them (tests.yaml) and
 # starts pico; this test starts nrf next to it, on the same virtual bus, and checks what each one
 # logged. Then it starts nrf again: the greeting pico set is still in its flash.
 #
