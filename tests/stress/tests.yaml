@@ -18,8 +18,8 @@ tests:
       pytest_dut_scope: session
     timeout: 600
     required_applications:
-      - name: twixt.stress.mcu_nrf2
-      - name: twixt.stress.mcu_nrf
+      - application: twixt.stress.mcu_nrf2
+      - application: twixt.stress.mcu_nrf
   twixt.stress.mcu_nrf2:
     platform_allow: native_sim
     extra_args: MCU=nrf2
