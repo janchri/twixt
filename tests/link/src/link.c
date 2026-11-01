@@ -37,12 +37,12 @@ static int fake_configure(const struct device *dev, uint32_t config)
 
 static int transfer_ret;
 static int transfers;
+static int busy_transfers;
 
 static int fake_transfer(const struct device *dev, struct i2c_msg *msgs, uint8_t num_msgs,
 			 uint16_t addr)
 {
-	transfers++;
-	return transfer_ret;
+	return ++transfers <= busy_transfers ? -EBUSY : transfer_ret;
 }
 
 static int fake_target_register(const struct device *dev, struct i2c_target_config *cfg)
@@ -77,6 +77,7 @@ static void before(void *fixture)
 	register_ret = 0;
 	transfer_ret = 0;
 	transfers = 0;
+	busy_transfers = 0;
 }
 
 ZTEST(twixt_link, test_address_nack_retried)
@@ -86,6 +87,18 @@ ZTEST(twixt_link, test_address_nack_retried)
 	transfer_ret = -ENXIO;
 	zassert_equal(twixt_link_transfer(&mm, OTHER_ADDR, &req, 1, &rsp, 1), -ENXIO);
 	zassert_true(transfers > 1);
+}
+
+/* Waiting for a busy bus does not use up the time for NACKs */
+ZTEST(twixt_link, test_address_nack_retried_after_busy_bus)
+{
+	uint8_t req = 1, rsp;
+
+	/* backing off 2 ms or more per attempt: past the NACK time before the first NACK */
+	busy_transfers = CONFIG_TWIXT_LINK_NACK_RETRY_MS;
+	transfer_ret = -ENXIO;
+	zassert_equal(twixt_link_transfer(&mm, OTHER_ADDR, &req, 1, &rsp, 1), -ENXIO);
+	zassert_true(transfers > busy_transfers + 1);
 }
 
 ZTEST(twixt_link, test_not_retried)

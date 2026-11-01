@@ -146,7 +146,8 @@ int twixt_link_transfer(struct twixt_link *link, uint16_t addr, const void *req,
 			void *rsp, size_t rsp_len)
 {
 	k_timepoint_t end = sys_timepoint_calc(K_MSEC(CONFIG_TWIXT_LINK_RETRY_MS));
-	k_timepoint_t nack_end = sys_timepoint_calc(K_MSEC(CONFIG_TWIXT_LINK_NACK_RETRY_MS));
+	k_timepoint_t nack_end;
+	bool nacked = false;
 
 	if (req_len > TWIXT_LINK_MSG_MAX || rsp_len > TWIXT_LINK_MSG_MAX) {
 		return -EINVAL;
@@ -175,6 +176,13 @@ int twixt_link_transfer(struct twixt_link *link, uint16_t addr, const void *req,
 		k_mutex_unlock(&link->lock);
 
 		if (nack) {
+			/* From the first NACK: a busy bus before it says nothing about the target
+			 */
+			if (!nacked) {
+				nacked = true;
+				nack_end =
+					sys_timepoint_calc(K_MSEC(CONFIG_TWIXT_LINK_NACK_RETRY_MS));
+			}
 			if (sys_timepoint_expired(nack_end)) {
 				return -ENXIO;
 			}

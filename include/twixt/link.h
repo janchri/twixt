@@ -105,7 +105,7 @@ int twixt_link_init(struct twixt_link *link, const struct device *i2c, uint16_t 
  * Bytes the target did not answer read as 0xff. A request to the own address
  * runs the callback directly. Lost arbitration and a busy bus are retried for
  * up to CONFIG_TWIXT_LINK_RETRY_MS, an address NACK (-ENXIO from the driver) for up
- * to CONFIG_TWIXT_LINK_NACK_RETRY_MS.
+ * to CONFIG_TWIXT_LINK_NACK_RETRY_MS after the first one.
  * Threads may call this concurrently.
  *
  * If reading the response fails, the request may or may not have run.
