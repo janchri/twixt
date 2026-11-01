@@ -13,7 +13,7 @@ tests:
     extra_args: MCU=pico
     harness: pytest
     required_applications:
-      - name: twixt.multi_mcu.mcu_nrf
+      - application: twixt.multi_mcu.mcu_nrf
   twixt.multi_mcu.mcu_nrf:
     platform_allow: native_sim
     extra_args: MCU=nrf

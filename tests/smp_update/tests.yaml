@@ -22,7 +22,7 @@ tests:
         - platform: rpi_pico/rp2040/mcuboot
           application: twixt.smp_update.rpi_pico
     required_applications:
-      - name: twixt.smp_update.nrf7002dk.v2
+      - application: twixt.smp_update.nrf7002dk.v2
     timeout: 900
   twixt.smp_update.nrf7002dk.v2:
     sysbuild: true
