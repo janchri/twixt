@@ -1,0 +1,21 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Optional ESP32 peer: append a USB port without renumbering existing ports. */
+
+/ {
+	bus_uart_esp: bus-uart-esp {
+		compatible = "twixt,uart";
+		peer = <&mcu_esp>;
+	};
+
+	bridge-esp {
+		compatible = "zephyr,uart-bridge";
+		peers = <&bus_uart_esp &host_esp>;
+	};
+};
+
+&zephyr_udc0 {
+	host_esp: host-esp {
+		compatible = "zephyr,cdc-acm-uart";
+		label = "twixt board esp";
+	};
+};

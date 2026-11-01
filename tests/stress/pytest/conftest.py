@@ -18,7 +18,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts' / 'pylib'
 from twixt_bench import Shell, bridge_ptys, pico_port, real_boards  # noqa: E402
 
 BUS_ID = 4  # boards/native_sim.overlay
-MCUS = {'nrf2': 0x10, 'nrf': 0x11, 'pico': 0x70}  # twixt_mcus.dtsi
+MCUS = {'nrf2': 0x10, 'nrf': 0x11, 'pico': 0x70, 'esp': 0x12}  # twixt_mcus.dtsi
+
+NATIVE_MCUS = ['nrf2', 'nrf', 'pico']
 
 cells = {}
 
@@ -45,7 +47,7 @@ def mcus(config) -> list[str]:
     harness = getattr(config, 'twister_harness_config', None)
     if harness and harness.devices and harness.devices[0].type == 'hardware':
         return ['nrf', 'pico']  # tests.yaml: twixt.stress.nrf7002dk
-    return list(ports(config)) or list(MCUS)
+    return list(ports(config)) or NATIVE_MCUS
 
 
 def combos(names: list[str]) -> list[tuple[str, ...]]:
@@ -95,8 +97,8 @@ def shells(request):
 
     dut = request.getfixturevalue('unlaunched_dut')
     build_dirs = request.getfixturevalue('required_build_dirs')
-    with bridge_ptys(dut, build_dirs, BUS_ID, list(MCUS)) as paths:
-        opened = {n: Shell(paths[n], prompt(n)) for n in MCUS}
+    with bridge_ptys(dut, build_dirs, BUS_ID, NATIVE_MCUS) as paths:
+        opened = {n: Shell(paths[n], prompt(n)) for n in NATIVE_MCUS}
         yield opened
         for s in opened.values():
             s.close()

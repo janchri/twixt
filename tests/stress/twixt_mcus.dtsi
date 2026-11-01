@@ -18,3 +18,10 @@ mcu_pico: pico@70 {
 	compatible = "twixt,mcu";
 	reg = <0x70>;
 };
+
+#ifdef TWIXT_STRESS_WITH_ESP
+mcu_esp: esp@12 {
+	compatible = "twixt,mcu";
+	reg = <0x12>;
+};
+#endif
