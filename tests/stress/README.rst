@@ -45,6 +45,11 @@ Options
 - ``--senders``: only these rows, e.g. ``nrf+pico``
 - ``-s``: also print the calls of each sender
 
+I2C scan
+--------
+
+Every board's shell has ``i2c scan i2c-mm``. It lists the other devices on the bus, not the board itself. A scan does not retry, so a busy peer shows as absent: scan an idle bus.
+
 Classic ESP32
 -------------
 
