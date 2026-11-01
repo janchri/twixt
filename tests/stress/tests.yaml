@@ -52,3 +52,10 @@ tests:
       - CONFIG_MCUBOOT_BOOTLOADER_MODE_SWAP_USING_OFFSET=y
       - CONFIG_MCUBOOT_SIGNATURE_KEY_FILE="bootloader/mcuboot/root-rsa-2048.pem"
     build_only: true
+  # Classic ESP32 target plus software controller, direct UART console.
+  twixt.stress.esp32:
+    platform_allow: esp32_devkitc/esp32/procpu
+    integration_platforms:
+      - esp32_devkitc/esp32/procpu
+    extra_args: MCU=esp
+    build_only: true
