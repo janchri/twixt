@@ -1,0 +1,10 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+cmake_minimum_required(VERSION 3.20.0)
+
+find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
+project(twixt_test)
+
+target_sources(app PRIVATE src/faults.c src/settings.c src/smp.c)
+target_include_directories(app PRIVATE ../../drivers/i2c/native)

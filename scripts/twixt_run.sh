@@ -8,8 +8,8 @@
 #
 #   scripts/twixt_run.sh <sample> <mcu>... [-- <native_sim options>]
 #
-#   scripts/twixt_run.sh samples/ping a b
-#   scripts/twixt_run.sh samples/ping a b -- -stop_at=3
+#   scripts/twixt_run.sh samples/ping nrf2 nrf
+#   scripts/twixt_run.sh samples/ping nrf2 nrf -- -stop_at=3
 #
 #   BUILD_DIR=dir       where the builds, logs and flash files go
 #                       (default: ./build-twixt-<sample>)

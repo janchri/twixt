@@ -4,12 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/* The gateway on a Raspberry Pi Pico (-DMCU=gw): the bus on SDA GP4 (pin 6), SCL GP5 (pin 7), at
- * 3.3 V. I2C0 is only the target, since the DesignWare block is not controller and target at
- * once; the controller is software on the same pins (twixt,i2c-mm-gpio), and pinctrl-0 gives the
- * pins back to I2C0. The ports to the host are USB CDC-ACM (src/gateway.c), "twixt pico":
- * if00 the log, if02 MCUmgr to update the image under MCUboot, if04 the gateway's shell, if06
- * board a, if08 board b.
+/* The bridge. The bus on GP4 (pin 6), GP5 (pin 7), at 3.3 V: I2C0 is the target, the controller
+ * software on the same pins (twixt,i2c-mm-gpio). pinctrl-0 gives the pins back to I2C0.
  */
 
 #include <zephyr/dt-bindings/i2c/i2c.h>
@@ -52,7 +48,7 @@
 };
 
 &zephyr_udc0 {
-	/* The same order on every twixt Pico: if00 the log, if02 MCUmgr, if04 the gateway's shell,
+	/* The same order on every twixt Pico: if00 the log, if02 MCUmgr, if04 the bridge's shell,
 	 * then the boards. Only MCUmgr waits for the host (hw-flow-control): it writes its answers
 	 * with poll_out, which drops what does not fit otherwise.
 	 */
@@ -67,21 +63,21 @@
 		hw-flow-control;
 	};
 
-	host_gw: host-gw {
+	host_pico: host-pico {
 		compatible = "zephyr,cdc-acm-uart";
-		label = "twixt gateway";
+		label = "twixt bridge";
 		status = "disabled";
 	};
 
-	host_a: host-a {
+	host_nrf2: host-nrf2 {
 		compatible = "zephyr,cdc-acm-uart";
-		label = "twixt board a";
+		label = "twixt board nrf2";
 		status = "disabled";
 	};
 
-	host_b: host-b {
+	host_nrf: host-nrf {
 		compatible = "zephyr,cdc-acm-uart";
-		label = "twixt board b";
+		label = "twixt board nrf";
 		status = "disabled";
 	};
 

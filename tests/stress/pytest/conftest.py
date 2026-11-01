@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # The shells of the MCUs for test_stress.py: on native_sim, twister starts the
-# gateway and this starts the boards and opens the gateway's PTYs. On real
-# boards with twister (--device-testing), board b on the nRF7002 DK and the
-# gateway on the Pico, the shells are on the gateway's USB ports; without
+# bridge and this starts the boards and opens the bridge's PTYs. On real
+# boards with twister (--device-testing), board nrf on the nRF7002 DK and the
+# bridge on the Pico, the shells are on the bridge's USB ports; without
 # twister, --ports names the serial port of each MCU's shell. The matrix has
 # only the MCUs there are.
 
@@ -15,10 +15,10 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts' / 'pylib'))
-from twixt_bench import Shell, gateway_ptys, pico_port, real_boards  # noqa: E402
+from twixt_bench import Shell, bridge_ptys, pico_port, real_boards  # noqa: E402
 
 BUS_ID = 4  # boards/native_sim.overlay
-MCUS = {'a': 0x10, 'b': 0x11, 'gw': 0x70}  # twixt_mcus.dtsi
+MCUS = {'nrf2': 0x10, 'nrf': 0x11, 'pico': 0x70}  # twixt_mcus.dtsi
 
 cells = {}
 
@@ -27,11 +27,11 @@ def pytest_addoption(parser):
     parser.addoption(
         '--ports',
         default=None,
-        help='real boards: <mcu>=<port>,..., e.g. gw=/dev/ttyACM2,b=/dev/ttyACM1',
+        help='real boards: <mcu>=<port>,..., e.g. pico=/dev/ttyACM2,nrf=/dev/ttyACM1',
     )
     parser.addoption('--interval', type=int, default=5, help='ms between echo requests (5)')
     parser.addoption('--seconds', type=int, default=1, help='seconds per cell (1)')
-    parser.addoption('--senders', default=None, help='only these rows: <combo>,..., e.g. a+b+gw')
+    parser.addoption('--senders', default=None, help='only these rows: <combo>,..., e.g. nrf2+nrf+pico')
 
 
 def ports(config) -> dict[str, str]:
@@ -42,7 +42,7 @@ def ports(config) -> dict[str, str]:
 def mcus(config) -> list[str]:
     harness = getattr(config, 'twister_harness_config', None)
     if harness and harness.devices and harness.devices[0].type == 'hardware':
-        return ['b', 'gw']  # testcase.yaml: twixt.stress.nrf7002dk
+        return ['nrf', 'pico']  # testcase.yaml: twixt.stress.nrf7002dk
     return list(ports(config)) or list(MCUS)
 
 
@@ -68,7 +68,7 @@ def pytest_generate_tests(metafunc):
 
 
 def prompt(n: str) -> str:
-    return f'{"gw" if n == "gw" else "mcu-" + n}@{MCUS[n]:x}:~$ '
+    return f'{n}@{MCUS[n]:x}:~$ '
 
 
 @pytest.fixture(scope='session')
@@ -83,9 +83,9 @@ def shells(request):
         return
 
     if boards := real_boards(request):
-        _, gw = boards
-        # if04 the gateway's shell, if08 board b's
-        opened = {n: Shell(pico_port(gw, i), prompt(n)) for n, i in (('gw', 4), ('b', 8))}
+        _, bridge = boards
+        # if04 the bridge's shell, if08 board nrf's
+        opened = {n: Shell(pico_port(bridge, i), prompt(n)) for n, i in (('pico', 4), ('nrf', 8))}
         yield opened
         for s in opened.values():
             s.close()
@@ -93,7 +93,7 @@ def shells(request):
 
     dut = request.getfixturevalue('unlaunched_dut')
     build_dirs = request.getfixturevalue('required_build_dirs')
-    with gateway_ptys(dut, build_dirs, BUS_ID, list(MCUS)) as paths:
+    with bridge_ptys(dut, build_dirs, BUS_ID, list(MCUS)) as paths:
         opened = {n: Shell(paths[n], prompt(n)) for n in MCUS}
         yield opened
         for s in opened.values():

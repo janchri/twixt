@@ -1,0 +1,41 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* pico, the gateway: if04 to nrf, if06 to itself, if08 to an address nobody answers at */
+/ {
+	i2c-mm {
+		mcu_absent: mcu-absent@13 {
+			compatible = "twixt,mcu";
+			reg = <0x13>;
+		};
+	};
+
+	gateway-nrf {
+		compatible = "twixt,smp-gateway-serial";
+		serial = <&usb_bridge>;
+		peer = <&mcu_nrf>;
+	};
+
+	gateway-self {
+		compatible = "twixt,smp-gateway-serial";
+		serial = <&usb_self>;
+		peer = <&mcu_pico>;
+	};
+
+	gateway-absent {
+		compatible = "twixt,smp-gateway-serial";
+		serial = <&usb_absent>;
+		peer = <&mcu_absent>;
+	};
+};
+
+&zephyr_udc0 {
+	usb_self: usb-self {
+		compatible = "zephyr,cdc-acm-uart";
+		hw-flow-control;
+	};
+
+	usb_absent: usb-absent {
+		compatible = "zephyr,cdc-acm-uart";
+		hw-flow-control;
+	};
+};

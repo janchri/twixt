@@ -4,10 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/* A board on an nRF7002 DK (-DMCU=b): the bus on the Arduino SDA P1.02, SCL P1.03, at the DK's
- * 1.8 V. TWIS2 is the target; the controller is software on the same pins (twixt,i2c-mm-gpio),
- * since the TWIM cannot detect lost arbitration. TWIM1 (arduino_i2c) has the same pins and is
- * off. The log is on the DK's VCOM.
+/* The bus on the Arduino SDA P1.02, SCL P1.03, at 1.8 V: TWIS2 is the target, the controller
+ * software on the same pins (twixt,i2c-mm-gpio), as the TWIM cannot detect lost arbitration.
  */
 
 #include <zephyr/dt-bindings/i2c/i2c.h>

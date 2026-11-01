@@ -1,0 +1,24 @@
+/*
+ * Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* One MCU alone on the bus: the gateway under test only talks to its fakes. */
+
+/ {
+	chosen {
+		twixt,self = &mcu_self;
+	};
+};
+
+&i2c0 {
+	compatible = "twixt,i2c-mm-native";
+	bus-id = <43>;
+	loopback;
+
+	mcu_self: mcu@20 {
+		compatible = "twixt,mcu";
+		reg = <0x20>;
+	};
+};

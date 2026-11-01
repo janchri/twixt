@@ -3,8 +3,8 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * A board: its shell is on a UART over the bus to the gateway (board.overlay), where the test
- * starts and reads "twixt stress". The prompt is its name: mcu-a@10:~$
+ * A board: its shell is on a UART over the bus to the bridge (board.overlay), where the test
+ * starts and reads "twixt stress". The prompt is its name: nrf2@10:~$
  */
 
 #include <stdio.h>

@@ -1,0 +1,52 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+common:
+  tags:
+    - i2c
+    - mcumgr
+tests:
+  # With --device-testing: nrf on the DK, the DUT, is updated through the USB port of pico on the
+  # Pico, back and forth to a second build of itself. Without it, only built
+  twixt.smp_update.nrf7002dk:
+    sysbuild: true
+    platform_allow: nrf7002dk/nrf5340/cpuapp
+    integration_platforms:
+      - nrf7002dk/nrf5340/cpuapp
+    extra_args:
+      - MCU=nrf
+      - VERSION=1
+    harness: pytest
+    harness_config:
+      required_devices:
+        - platform: rpi_pico/rp2040/mcuboot
+          application: twixt.smp_update.rpi_pico
+    required_applications:
+      - name: twixt.smp_update.nrf7002dk.v2
+    timeout: 900
+  twixt.smp_update.nrf7002dk.v2:
+    sysbuild: true
+    build_only: true
+    platform_allow: nrf7002dk/nrf5340/cpuapp
+    extra_args:
+      - MCU=nrf
+      - VERSION=2
+  twixt.smp_update.rpi_pico:
+    build_only: true
+    platform_allow: rpi_pico/rp2040/mcuboot
+    integration_platforms:
+      - rpi_pico/rp2040/mcuboot
+    extra_args: MCU=pico
+    extra_configs:
+      - CONFIG_BOOTLOADER_MCUBOOT=y
+      - CONFIG_MCUBOOT_BOOTLOADER_MODE_SWAP_USING_OFFSET=y
+      - CONFIG_MCUBOOT_SIGNATURE_KEY_FILE="bootloader/mcuboot/root-rsa-2048.pem"
+  # Bluetooth stays by hand (README.rst)
+  twixt.smp_update.ble.nrf7002dk:
+    sysbuild: true
+    build_only: true
+    platform_allow: nrf7002dk/nrf5340/cpuapp
+    extra_args:
+      - MCU=nrf
+      - ROUTE=ble
+      - SB_CONFIG_NET_CORE_IMAGE_HCI_IPC=y

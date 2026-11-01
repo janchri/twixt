@@ -1,0 +1,65 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* The bus on GP4 (pin 6), GP5 (pin 7), at 3.3 V: I2C0 is the target, the controller software on
+ * the same pins (twixt,i2c-mm-gpio). pinctrl-0 gives the pins back to I2C0.
+ */
+
+#include <zephyr/dt-bindings/i2c/i2c.h>
+
+/ {
+	chosen {
+		twixt,self = &TWIXT_SELF_LABEL;
+		zephyr,console = &usb_log;
+		zephyr,shell-uart = &usb_log;
+		zephyr,uart-mcumgr = &usb_mcumgr;
+	};
+
+	i2c-mm {
+		compatible = "twixt,i2c-mm-gpio";
+		target = <&i2c0>;
+		scl-gpios = <&gpio0 5 0>;
+		sda-gpios = <&gpio0 4 0>;
+		clock-frequency = <I2C_BITRATE_STANDARD>;
+		pinctrl-0 = <&i2c0_default>;
+		pinctrl-names = "default";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+#include "../twixt_mcus.dtsi"
+	};
+};
+
+&i2c0 {
+	clock-frequency = <I2C_BITRATE_STANDARD>;
+};
+
+&zephyr_udc0 {
+	usb_log: usb-log {
+		compatible = "zephyr,cdc-acm-uart";
+	};
+
+	usb_mcumgr: usb-mcumgr {
+		compatible = "zephyr,cdc-acm-uart";
+		/* poll_out: wait instead of dropping */
+		hw-flow-control;
+	};
+};
+
+&pinctrl {
+	i2c0_default: i2c0_default {
+		group1 {
+			pinmux = <I2C0_SDA_P4>, <I2C0_SCL_P5>;
+			input-enable;
+			input-schmitt-enable;
+			bias-pull-up; /* weak; the bus needs its own pull-ups */
+		};
+	};
+};
+
+/* if04: serial SMP from the host */
+&zephyr_udc0 {
+	usb_bridge: usb-bridge {
+		compatible = "zephyr,cdc-acm-uart";
+		/* poll_out: wait instead of dropping */
+		hw-flow-control;
+	};
+};

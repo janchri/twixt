@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/* A board: its shell on a UART over the bus to the gateway */
+/* A board: its shell on a UART over the bus to the bridge */
 
 / {
 	chosen {
@@ -13,6 +13,6 @@
 
 	bus_uart: bus-uart {
 		compatible = "twixt,uart";
-		peer = <&mcu_gw>;
+		peer = <&mcu_pico>;
 	};
 };

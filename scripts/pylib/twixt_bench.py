@@ -3,9 +3,9 @@
 #
 # Test bench of twixt on native_sim, for the twister pytest harnesses: every
 # MCU is a native_sim process, and the processes with the same bus-id share one
-# virtual I2C bus (twixt,native-i2c-mm). Twister builds every MCU
+# virtual I2C bus (twixt,i2c-mm-native). Twister builds every MCU
 # (required_applications) and starts one of them as the DUT; a test starts the
-# others with start_mcus(), and reads their logs or the gateway's PTYs.
+# others with start_mcus(), and reads their logs or the bridge's PTYs.
 #
 #   sys.path.insert(0, str(<twixt> / 'scripts' / 'pylib'))
 #   from twixt_bench import Mcu, Shell, start_mcus
@@ -102,7 +102,7 @@ def real_boards(request) -> list | None:
 
 def pico_port(dut, interface: int) -> str:
     """Another USB port of a twixt Pico, from its log port (-if00) in the hardware map: if02
-    MCUmgr, if04 a gateway's shell, then the boards: 6 a, 8 b, 10 c"""
+    MCUmgr, if04 a bridge's shell, then the boards: 6 nrf2, 8 nrf, 10 nrf3"""
     log = dut.device_config.serial_configs[0].port
     return re.sub(r'-if[0-9a-f]{2}$', f'-if{interface:02x}', log)  # interface numbers in hex
 
@@ -111,43 +111,32 @@ PTY = re.compile(r'pty-(\w+) connected to pseudotty: (\S+)')
 
 
 def ptys(lines: list[str]) -> dict[str, str]:
-    """The PTYs a gateway printed: {'a': '/dev/pts/7', ...}"""
+    """The PTYs a bridge printed: {'nrf2': '/dev/pts/7', ...}"""
     return dict(m.groups() for m in map(PTY.search, lines) if m)
 
 
 @contextmanager
-def gateway_ptys(
+def bridge_ptys(
     dut, build_dirs: list[str], bus_id: int, boards: list[str]
 ) -> Iterator[dict[str, str]]:
-    """Start the boards, launch the gateway (the DUT), and yield its PTY of every board"""
+    """Start the boards, launch the bridge (the DUT), and yield its PTY of every board"""
     with start_mcus(build_dirs, bus_id):
         dut.launch()
         lines = dut.readlines_until(regex=rf'pty-{boards[-1]} connected', timeout=TIMEOUT_S)
         paths = ptys(lines)
-        assert set(paths) == set(boards), f'PTYs of the gateway: {paths}'
+        assert set(paths) == set(boards), f'PTYs of the bridge: {paths}'
         yield paths
 
 
-@contextmanager
-def board_shells(paths: dict[str, str], boards: dict[str, int]) -> Iterator[dict[str, 'Shell']]:
-    """The shell of every board, its prompt being its MCU name: mcu-a@10:~$"""
-    opened = {n: Shell(paths[n], f'mcu-{n}@{addr:x}:~$ ') for n, addr in boards.items()}
-    try:
-        yield opened
-    finally:
-        for shell in opened.values():
-            shell.close()
-
-
 class Shell:
-    """The shell of a board, on the gateway's PTY for it"""
+    """The shell of a board, on the bridge's PTY for it"""
 
     def __init__(self, path: str, prompt: str):
         self.prompt = prompt
         self.buf = b''
         self.fd = os.open(path, os.O_RDWR | os.O_NOCTTY)
         tty.setraw(self.fd)
-        # A board that started before the gateway lost its first prompt
+        # A board that started before the bridge lost its first prompt
         os.write(self.fd, b'\r')
         self.read_until(prompt)
 

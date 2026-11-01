@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/* The bus on native_sim (twixt,native-i2c-mm); TWIXT_SELF_LABEL is mcu_<MCU>. The gateway's
- * ports to the host are PTYs (gateway.overlay enables them):
- * "pty-a connected to pseudotty: /dev/pts/N"
+/* The bus on native_sim (twixt,i2c-mm-native); TWIXT_SELF_LABEL is mcu_<MCU>. The bridge's
+ * ports to the host are PTYs (bridge.overlay enables them):
+ * "pty-nrf2 connected to pseudotty: /dev/pts/N"
  */
 
 / {
@@ -14,19 +14,19 @@
 		twixt,self = &TWIXT_SELF_LABEL;
 	};
 
-	host_a: pty-a {
+	host_nrf2: pty-nrf2 {
 		compatible = "zephyr,native-pty-uart";
 		current-speed = <0>;
 		status = "disabled";
 	};
 
-	host_b: pty-b {
+	host_nrf: pty-nrf {
 		compatible = "zephyr,native-pty-uart";
 		current-speed = <0>;
 		status = "disabled";
 	};
 
-	host_gw: pty-gw {
+	host_pico: pty-pico {
 		compatible = "zephyr,native-pty-uart";
 		current-speed = <0>;
 		status = "disabled";
@@ -34,7 +34,7 @@
 };
 
 &i2c0 {
-	compatible = "twixt,native-i2c-mm";
+	compatible = "twixt,i2c-mm-native";
 	bus-id = <4>;
 
 	/* The MCUs are processes that the host scheduler wakes up within about a
