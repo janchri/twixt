@@ -102,8 +102,9 @@ Some I2C blocks cannot detect lost arbitration, such as the nRF TWIM, or cannot 
 4. **No authentication.** `src` isn't verified, which assumes a trusted bus. The Bluetooth gateway doesn't require pairing yet, so anyone in range can send SMP commands to every MCU. MCUboot still rejects unsigned images.
 5. **Lost responses.** If a response is lost, the sender can't tell whether the request ran, so requests with side effects need their own protection. Should Twixt add request ids?
 6. **Open failure on real boards.** Under two-way load between the nRF and the Pico, about 0.05% of the calls from the nRF to the Pico have ended in `-ENXIO`. The most recent 20 s run had no errors, and the cause isn't known.
-7. **Bus sharing with other I2C devices.** Plain peripherals should work on the same driver instance, but this isn't tested yet.
-8. **Where it belongs.** Should Twixt be a Zephyr subsystem, or stay a module listed in the manifest?
+7. **Two Bluetooth connections at once.** An update over Bluetooth fails about half the time while a second connection to the gateway is open: its link drops with error 0x28. The MCU keeps its old image, and the cause isn't known. One connection at a time works.
+8. **Bus sharing with other I2C devices.** Plain peripherals should work on the same driver instance, but this isn't tested yet.
+9. **Where it belongs.** Should Twixt be a Zephyr subsystem, or stay a module listed in the manifest?
 
 ## Alternatives Considered
 

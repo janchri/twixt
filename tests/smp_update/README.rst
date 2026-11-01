@@ -38,3 +38,5 @@ By hand. nrf advertises one device per MCU, and ``hci_ipc`` runs the controller 
    pytest modules/lib/twixt/tests/smp_update/pytest --ble nrf --ble-other pico --v1 v1.signed.bin --v2 v2.signed.bin
 
 ``--v1`` and ``--v2`` are images of the MCU behind ``--ble``.
+
+Known limitation: with ``--ble-other``, ``test_other_mcu_answers_during_upload`` fails about half the time. The upload's link drops with error 0x28 while a second connection is open. The MCU keeps its old image, and the cause is not known yet.

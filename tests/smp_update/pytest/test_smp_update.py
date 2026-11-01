@@ -138,7 +138,9 @@ def test_other_mcu_answers_during_upload(bench):
     )
     time.sleep(10)
     for _ in range(3):
-        assert upload.poll() is None, 'the upload ended before the other MCU was asked'
+        if upload.poll() is not None:
+            out, _ = upload.communicate()
+            pytest.fail(f'the upload ended before the other MCU was asked: {out[-600:]}')
         run = subprocess.run(
             [*bench['other'], '--timeout', '30', 'image', 'state-read'],
             capture_output=True,
