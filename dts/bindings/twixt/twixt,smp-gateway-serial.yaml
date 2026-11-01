@@ -1,0 +1,35 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  A port to one MCU's MCUmgr, for stock SMP tools: the SMP packets on the port
+  go to the MCUmgr service of peer, and its responses come back. One node per
+  MCU to reach, this MCU included. One request at a time over all ports.
+
+    usb_nrf: usb-nrf {
+            compatible = "zephyr,cdc-acm-uart";
+            hw-flow-control;
+    };
+
+    gateway-nrf {
+            compatible = "twixt,smp-gateway-serial";
+            serial = <&usb_nrf>;
+            peer = <&mcu_nrf>;
+    };
+
+compatible: "twixt,smp-gateway-serial"
+
+include: base.yaml
+
+properties:
+  serial:
+    type: phandle
+    required: true
+    description: |
+      UART to the host, with serial SMP on it. A CDC-ACM port needs
+      hw-flow-control, or a response too large for its buffer loses bytes.
+
+  peer:
+    type: phandle
+    required: true
+    description: twixt,mcu to reach

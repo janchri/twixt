@@ -1,0 +1,64 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+menuconfig TWIXT_SMP_GATEWAY
+	bool "MCUmgr of the MCUs for stock SMP tools"
+	default y
+	depends on TWIXT_SMP
+	depends on DT_HAS_TWIXT_SMP_GATEWAY_SERIAL_ENABLED || DT_HAS_TWIXT_SMP_GATEWAY_BT_ENABLED
+	help
+	  Stock SMP tools update any MCU of the bus through this one, on a port
+	  or a Bluetooth device per MCU: twixt,smp-gateway-serial and
+	  twixt,smp-gateway-bt. It takes the responses: twixt_smp_rsp_get() is
+	  not for the application then.
+
+if TWIXT_SMP_GATEWAY
+
+config TWIXT_SMP_GATEWAY_RSP_TIMEOUT_MS
+	int "Wait for a response, in ms"
+	default 60000
+	help
+	  The first write of an image erases a slot, which takes a while. All
+	  ports wait meanwhile.
+
+config TWIXT_SMP_GATEWAY_STACK_SIZE
+	int "Stack of the gateway's thread"
+	default 2048
+
+config TWIXT_SMP_GATEWAY_PRIORITY
+	int "Priority of the gateway's thread"
+	default 5
+
+config TWIXT_SMP_GATEWAY_SERIAL
+	def_bool DT_HAS_TWIXT_SMP_GATEWAY_SERIAL_ENABLED
+	depends on SERIAL
+	select UART_INTERRUPT_DRIVEN
+	select UART_LINE_CTRL
+	select BASE64
+	select CRC
+	select MCUMGR_TRANSPORT_SERIAL_HAS_SMP_OVER_CONSOLE
+
+config TWIXT_SMP_GATEWAY_RX_BUF_SIZE
+	int "Bytes from the host waiting, per port"
+	default 256
+	depends on TWIXT_SMP_GATEWAY_SERIAL
+
+config TWIXT_SMP_GATEWAY_LINE_MAX
+	int "Longest line of serial SMP, per port"
+	default 512
+	depends on TWIXT_SMP_GATEWAY_SERIAL
+
+config TWIXT_SMP_GATEWAY_BT
+	def_bool DT_HAS_TWIXT_SMP_GATEWAY_BT_ENABLED
+	depends on BT_PERIPHERAL && BT_EXT_ADV
+
+config TWIXT_SMP_GATEWAY_BT_IDLE_MS
+	int "Drop a Bluetooth connection without SMP traffic after, in ms"
+	default 60000
+	depends on TWIXT_SMP_GATEWAY_BT
+	help
+	  A device does not advertise while connected, and a tool that died can
+	  leave the link up. A request waiting for its response does not count
+	  as quiet.
+
+endif # TWIXT_SMP_GATEWAY

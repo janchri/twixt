@@ -1,0 +1,29 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  A Bluetooth device for one MCU's MCUmgr, for stock SMP tools: this MCU
+  advertises one connectable device per node, each with its own identity and
+  the standard SMP service, and what comes in on a connection goes to the
+  MCUmgr service of its peer. One node per MCU to reach, this MCU included.
+
+    gateway-bt-pico {
+            compatible = "twixt,smp-gateway-bt";
+            peer = <&mcu_pico>;
+    };
+
+compatible: "twixt,smp-gateway-bt"
+
+include: base.yaml
+
+properties:
+  peer:
+    type: phandle
+    required: true
+    description: twixt,mcu to reach
+
+  bt-name:
+    type: string
+    description: |
+      Name it advertises, 28 bytes at most. By default the node name of peer,
+      without its unit address: pico for pico@10.
