@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Coding style checks for every commit (https://pre-commit.com). The hooks are
-# local: they run the tools of requirements.txt, so nothing is downloaded.
+# local: they run the tools of requirements-dev.txt, so nothing is downloaded.
 #
-#   pip install -r requirements.txt
+#   pip install -r requirements-dev.txt
 #   pre-commit install            # once per clone: runs on the files of each commit
 #   pre-commit run --all-files    # by hand
 #

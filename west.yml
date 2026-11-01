@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Standalone workspace for twixt (west init -m https://github.com/janchri/twixt).
-# Other workspaces add twixt as a project instead, see README.md.
+# Other workspaces add twixt as a project instead, see README.rst.
 
 manifest:
   version: "0.13"
@@ -17,7 +17,7 @@ manifest:
   projects:
     - name: zephyr
       remote: zephyrproject
-      revision: v4.5.0-rc2
+      revision: v4.5.0
       import:
         # What the samples need: the Raspberry Pi Pico and the nRF7002 DK,
         # MCUboot (with its crypto) and MCUmgr
