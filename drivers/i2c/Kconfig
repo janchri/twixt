@@ -27,6 +27,7 @@ config I2C_MM_GPIO
 
 config I2C_MM_GPIO_PORT
 	string
+	default "esp32" if I2C_MM_ESP32_TARGET
 	default "rp2040" if SOC_SERIES_RP2040
 	default "generic"
 	depends on I2C_MM_GPIO
@@ -54,3 +55,15 @@ config I2C_MM_TARGET_REREGISTER
 # A byte on the native_sim bus is 90 us; a coarser tick would round it up
 configdefault SYS_CLOCK_TICKS_PER_SEC
 	default 100000 if I2C_MM_NATIVE
+
+config I2C_MM_ESP32_TARGET
+	bool "Classic ESP32 target with GPIO clock stretching"
+	default y
+	depends on DT_HAS_TWIXT_ESP32_I2C_TARGET_ENABLED
+	depends on SOC_ESP32 && GPIO && !SMP && !PM
+	select I2C_TARGET
+	help
+	  Target backend for twixt,i2c-mm-gpio. Keeps the target peripheral alive
+	  during software controller transfers. Classic ESP32, 100 kHz only.
+	  Interrupts and callbacks run on the single enabled CPU. Flash writes
+	  during target traffic are not supported.
