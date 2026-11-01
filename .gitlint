@@ -1,0 +1,21 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+#
+# Zephyr's commit message guidelines: a title with an area, a body, a sign-off.
+
+[general]
+contrib=contrib-body-requires-signed-off-by
+ignore=body-changed-file-mention
+extra-path=scripts/gitlint
+
+[title-max-length]
+line-length=72
+
+[title-match-regex]
+regex=^[^:\s]+(: [^:]+)*: .+$
+
+[body-max-line-length]
+line-length=75
+
+[body-min-length]
+min-length=3
