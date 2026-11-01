@@ -4,16 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/* The MCUs on the bus, the same for every image: included in the bus node of each board's
- * overlay (boards/)
- */
-
-mcu_a: mcu-a@10 {
+mcu_pico: pico@10 {
 	compatible = "twixt,mcu";
 	reg = <0x10>;
 };
 
-mcu_b: mcu-b@11 {
+mcu_nrf: nrf@11 {
 	compatible = "twixt,mcu";
 	reg = <0x11>;
 };

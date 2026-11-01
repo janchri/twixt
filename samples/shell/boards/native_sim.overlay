@@ -1,0 +1,40 @@
+/*
+ * Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/ {
+	chosen {
+		twixt,self = &TWIXT_SELF_LABEL;
+	};
+
+	/* The bridge's ports to the laptop (bridge.overlay enables them):
+	 * "pty-nrf2 connected to pseudotty: /dev/pts/N"
+	 */
+	host_nrf2: pty-nrf2 {
+		compatible = "zephyr,native-pty-uart";
+		current-speed = <0>;
+		status = "disabled";
+	};
+
+	host_nrf: pty-nrf {
+		compatible = "zephyr,native-pty-uart";
+		current-speed = <0>;
+		status = "disabled";
+	};
+
+	host_nrf3: pty-nrf3 {
+		compatible = "zephyr,native-pty-uart";
+		current-speed = <0>;
+		status = "disabled";
+	};
+};
+
+&i2c0 {
+	compatible = "twixt,i2c-mm-native";
+	bus-id = <1>;
+	start-window-us = <2000>;
+
+#include "../twixt_mcus.dtsi"
+};

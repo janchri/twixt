@@ -5,7 +5,7 @@
  *
  * Settings over twixt: one MCU of two. It serves its settings (Zephyr
  * settings subsystem, subtree "mcu") to the other MCU, and gets and sets those
- * of the other one by name (twixt/settings.h):
+ * of the other one by name (twixt/service/settings.h):
  *
  *   mcu/name       read-only   the devicetree node of the MCU
  *   mcu/greeting   read/write  any text, kept in flash
@@ -19,8 +19,8 @@
 #include <zephyr/spinlock.h>
 
 #include <twixt/twixt.h>
-#include <twixt/ping.h>
-#include <twixt/settings.h>
+#include <twixt/service/ping.h>
+#include <twixt/service/settings.h>
 
 LOG_MODULE_REGISTER(settings_sample, LOG_LEVEL_INF);
 

@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/* The bus on native_sim (twixt,native-i2c-mm); TWIXT_SELF_LABEL is mcu_<MCU> */
-
 / {
 	chosen {
 		twixt,self = &TWIXT_SELF_LABEL;
@@ -13,7 +11,7 @@
 };
 
 &i2c0 {
-	compatible = "twixt,native-i2c-mm";
+	compatible = "twixt,i2c-mm-native";
 	bus-id = <2>;
 
 #include "../twixt_mcus.dtsi"

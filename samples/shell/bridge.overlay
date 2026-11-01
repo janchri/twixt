@@ -1,0 +1,54 @@
+/*
+ * Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* The console bridge: per board a UART over the bus, bridged to a serial port
+ * to the laptop, host_<board>. The board's overlay (boards/) has the host ports,
+ * disabled: a PTY on native_sim, USB CDC-ACM on the Raspberry Pi Pico.
+ */
+
+/ {
+	bus_uart_nrf2: bus-uart-nrf2 {
+		compatible = "twixt,uart";
+		peer = <&mcu_nrf2>;
+	};
+
+	bridge-a {
+		compatible = "zephyr,uart-bridge";
+		peers = <&bus_uart_nrf2 &host_nrf2>;
+	};
+
+	bus_uart_nrf: bus-uart-nrf {
+		compatible = "twixt,uart";
+		peer = <&mcu_nrf>;
+	};
+
+	bridge-b {
+		compatible = "zephyr,uart-bridge";
+		peers = <&bus_uart_nrf &host_nrf>;
+	};
+
+	bus_uart_nrf3: bus-uart-nrf3 {
+		compatible = "twixt,uart";
+		peer = <&mcu_nrf3>;
+	};
+
+	bridge-c {
+		compatible = "zephyr,uart-bridge";
+		peers = <&bus_uart_nrf3 &host_nrf3>;
+	};
+};
+
+&host_nrf2 {
+	status = "okay";
+};
+
+&host_nrf {
+	status = "okay";
+};
+
+&host_nrf3 {
+	status = "okay";
+};

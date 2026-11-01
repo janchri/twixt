@@ -4,18 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/* On a Raspberry Pi Pico: the bus on SDA GP4 (pin 6), SCL GP5 (pin 7), at 3.3 V. I2C0 is only
- * the target, since the DesignWare block is not controller and target at once; the controller
- * is software on the same pins (twixt,i2c-mm-gpio), and pinctrl-0 gives the pins back to I2C0.
- * The Pico has two USB CDC-ACM ports: the log (if00), through a shell there, and MCUmgr (if02) to
- * update the image under MCUboot.
+/* The bus on GP4 (pin 6), GP5 (pin 7), at 3.3 V: I2C0 is the target, the controller software on
+ * the same pins (twixt,i2c-mm-gpio). pinctrl-0 gives the pins back to I2C0.
  */
 
 #include <zephyr/dt-bindings/i2c/i2c.h>
 
 / {
 	chosen {
-		twixt,self = &TWIXT_SELF_LABEL;
+		twixt,self = &mcu_pico;
 		zephyr,console = &usb_log;
 		zephyr,shell-uart = &usb_log;
 		zephyr,uart-mcumgr = &usb_mcumgr;
@@ -47,7 +44,7 @@
 
 	usb_mcumgr: usb-mcumgr {
 		compatible = "zephyr,cdc-acm-uart";
-		/* MCUmgr writes its responses with poll_out: wait instead of dropping */
+		/* poll_out: wait instead of dropping */
 		hw-flow-control;
 	};
 };

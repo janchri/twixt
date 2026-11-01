@@ -11,13 +11,14 @@
 #include <zephyr/logging/log.h>
 
 #include <twixt/twixt.h>
-#include <twixt/ping.h>
+#include <twixt/service/ping.h>
 
 LOG_MODULE_REGISTER(ping_sample, LOG_LEVEL_INF);
 
 #define PEER                                                                                       \
-	(twixt_self_addr() == DT_REG_ADDR(DT_NODELABEL(mcu_a)) ? DT_REG_ADDR(DT_NODELABEL(mcu_b))  \
-							       : DT_REG_ADDR(DT_NODELABEL(mcu_a)))
+	(twixt_self_addr() == DT_REG_ADDR(DT_NODELABEL(mcu_pico))                                  \
+		 ? DT_REG_ADDR(DT_NODELABEL(mcu_nrf))                                              \
+		 : DT_REG_ADDR(DT_NODELABEL(mcu_pico)))
 
 int main(void)
 {
@@ -26,7 +27,6 @@ int main(void)
 
 	LOG_INF("%s at 0x%02x", twixt_self_name(), twixt_self_addr());
 
-	/* Again and again, for a terminal opened later; the other MCU may still boot */
 	for (;; k_sleep(K_SECONDS(2))) {
 		ret = twixt_ping_wait(PEER, &info, K_SECONDS(5));
 		if (ret) {
