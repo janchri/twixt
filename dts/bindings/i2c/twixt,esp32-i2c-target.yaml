@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Classic ESP32 I2C target with GPIO clock stretching for a repeated START.
+  Used as the target backend of twixt,i2c-mm-gpio at 100 kHz. SDA and SCL
+  must be on gpio0; the peripheral remains in target mode during controller
+  transfers. The standard ESP32 I2C driver must not own this peripheral.
+
+compatible: "twixt,esp32-i2c-target"
+include: [i2c-controller.yaml, pinctrl-device.yaml]
+properties:
+  reg:
+    required: true
+  clocks:
+    required: true
+  interrupts:
+    required: true
+  scl-gpios:
+    type: phandle-array
+    required: true
+  sda-gpios:
+    type: phandle-array
+    required: true
+  port:
+    type: int
+    required: true
+    enum: [0, 1]

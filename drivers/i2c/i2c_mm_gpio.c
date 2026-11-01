@@ -328,6 +328,11 @@ static int recover(struct mm_gpio_data *d, const struct mm_gpio_config *cfg)
  */
 static inline void target_irq_set(const struct mm_gpio_config *cfg, bool on)
 {
+#ifdef MM_GPIO_TARGET_HANDOFF
+	if (target_handoff_matches(cfg->target)) {
+		return; /* The backend owns its dynamically allocated interrupts. */
+	}
+#endif
 	if (cfg->target_irq < 0) {
 		return;
 	}
@@ -342,6 +347,11 @@ static int pins_take(const struct mm_gpio_data *d, const struct mm_gpio_config *
 {
 	int ret = 0;
 
+#ifdef MM_GPIO_TARGET_HANDOFF
+	if (target_handoff_matches(cfg->target)) {
+		return target_handoff_take(cfg->target);
+	}
+#endif
 	if (d->target_cfg) {
 		target_irq_set(cfg, false);
 		ret = i2c_target_unregister(cfg->target, d->target_cfg);
@@ -361,6 +371,13 @@ static int pins_to_target(const struct mm_gpio_config *cfg)
 
 static void pins_give(const struct mm_gpio_data *d, const struct mm_gpio_config *cfg)
 {
+#ifdef MM_GPIO_TARGET_HANDOFF
+	if (target_handoff_matches(cfg->target)) {
+		release(cfg);
+		target_handoff_give(cfg->target);
+		return;
+	}
+#endif
 	/* On the Pico pinctrl releases SDA, completing STOP. Enable the target first. */
 	int ret = d->target_cfg ? target_reregister(cfg->target, d->target_cfg) : 0;
 
@@ -455,6 +472,12 @@ static int mm_gpio_transfer(const struct device *dev, struct i2c_msg *msgs, uint
 		bool stuck = ret == -EIO;
 
 		ret = pins_take(d, cfg);
+#ifdef MM_GPIO_TARGET_HANDOFF
+		if (ret && target_handoff_matches(cfg->target)) {
+			k_mutex_unlock(&d->lock);
+			return ret;
+		}
+#endif
 		if (stuck) {
 			LOG_WRN("SDA stuck low, recovering");
 			ret = ret ? ret : recover(d, cfg);
@@ -474,6 +497,14 @@ static int mm_gpio_configure(const struct device *dev, uint32_t dev_config)
 	uint32_t rate;
 	uint32_t high_min_ns;
 
+#ifdef MM_GPIO_TARGET_HANDOFF
+	const struct mm_gpio_config *cfg = dev->config;
+
+	if (target_handoff_matches(cfg->target) &&
+	    I2C_SPEED_GET(dev_config) != I2C_SPEED_STANDARD) {
+		return -ENOTSUP;
+	}
+#endif
 	switch (I2C_SPEED_GET(dev_config)) {
 	case I2C_SPEED_STANDARD:
 		rate = I2C_BITRATE_STANDARD;

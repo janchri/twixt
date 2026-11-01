@@ -25,8 +25,9 @@ description: |
   - During its own transfer the port NACKs its address: the other MCUs need
     CONFIG_TWIXT_LINK_NACK_RETRY_MS longer than its longest transfer, a request
     and a response of CONFIG_TWIXT_LINK_MSG_MAX bytes each.
-  - It ends its STOP by registering the target again, so the target is back
-    before the bus is free.
+  - By default it ends its STOP by registering the target again, so the target
+    is back before the bus is free. A platform port may provide an optional
+    handoff that keeps its target peripheral running (classic ESP32).
   - In target buffer mode it reports a STOP after a write to the target when
     SCL and SDA stay high for two bit times after the end of the write, in the
     target's interrupt: the target block must hold SCL low until it has the
@@ -66,8 +67,10 @@ properties:
     type: phandle
     required: true
     description: |
-      Target-only I2C block on the same pins; unregistering its target must
-      release the pins
+      Target-only I2C block on the same pins. In the default handoff,
+      unregistering its target must release the pins. A platform port with
+      a dedicated handoff may instead retain the target peripheral and
+      temporarily route the pin outputs to GPIO.
 
   scl-gpios:
     type: phandle-array

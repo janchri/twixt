@@ -1,9 +1,10 @@
 # Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-if(CONFIG_TWIXT_LINK OR CONFIG_I2C_MM_NATIVE OR CONFIG_I2C_MM_GPIO)
+if(CONFIG_TWIXT_LINK OR CONFIG_I2C_MM_NATIVE OR CONFIG_I2C_MM_GPIO OR CONFIG_I2C_MM_ESP32_TARGET)
   zephyr_library()
   zephyr_library_sources(target_restore.c)
+  zephyr_library_sources_ifdef(CONFIG_I2C_MM_ESP32_TARGET esp32/i2c_mm_esp32_target.c)
   zephyr_library_sources_ifdef(CONFIG_I2C_MM_NATIVE native/i2c_mm_native.c)
   if(CONFIG_I2C_MM_GPIO)
     zephyr_library_sources(i2c_mm_gpio.c)
