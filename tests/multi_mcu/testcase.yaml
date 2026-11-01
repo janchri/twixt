@@ -1,0 +1,42 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+common:
+  tags:
+    - i2c
+    - settings
+tests:
+  twixt.multi_mcu:
+    platform_allow: native_sim
+    integration_platforms:
+      - native_sim
+    extra_args: MCU=pico
+    harness: pytest
+    required_applications:
+      - name: twixt.multi_mcu.mcu_nrf
+  twixt.multi_mcu.mcu_nrf:
+    platform_allow: native_sim
+    extra_args: MCU=nrf
+    build_only: true
+  # Real boards: nrf on the DK is the DUT, the Pico a required device
+  twixt.multi_mcu.nrf7002dk:
+    platform_allow: nrf7002dk/nrf5340/cpuapp
+    integration_platforms:
+      - nrf7002dk/nrf5340/cpuapp
+    extra_args: MCU=nrf
+    harness: pytest
+    harness_config:
+      required_devices:
+        - platform: rpi_pico/rp2040/mcuboot
+          application: twixt.multi_mcu.rpi_pico
+  # The image alone, signed for the MCUboot on the Pico, for the smp runner
+  twixt.multi_mcu.rpi_pico:
+    platform_allow: rpi_pico/rp2040/mcuboot
+    integration_platforms:
+      - rpi_pico/rp2040/mcuboot
+    extra_args: MCU=pico
+    extra_configs:
+      - CONFIG_BOOTLOADER_MCUBOOT=y
+      - CONFIG_MCUBOOT_BOOTLOADER_MODE_SWAP_USING_OFFSET=y
+      - CONFIG_MCUBOOT_SIGNATURE_KEY_FILE="bootloader/mcuboot/root-rsa-2048.pem"
+    build_only: true

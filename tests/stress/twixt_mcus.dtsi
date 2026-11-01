@@ -1,0 +1,20 @@
+/*
+ * Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+mcu_nrf2: nrf2@10 {
+	compatible = "twixt,mcu";
+	reg = <0x10>;
+};
+
+mcu_nrf: nrf@11 {
+	compatible = "twixt,mcu";
+	reg = <0x11>;
+};
+
+mcu_pico: pico@70 {
+	compatible = "twixt,mcu";
+	reg = <0x70>;
+};

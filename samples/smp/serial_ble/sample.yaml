@@ -1,0 +1,24 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+sample:
+  name: MCUmgr over a serial and a Bluetooth gateway
+common:
+  build_only: true
+  tags:
+    - i2c
+    - mcumgr
+tests:
+  sample.twixt.smp.serial_ble.rpi_pico:
+    platform_allow: rpi_pico/rp2040/mcuboot
+    integration_platforms:
+      - rpi_pico/rp2040/mcuboot
+    extra_configs:
+      - CONFIG_BOOTLOADER_MCUBOOT=y
+      - CONFIG_MCUBOOT_BOOTLOADER_MODE_SWAP_USING_OFFSET=y
+      - CONFIG_MCUBOOT_SIGNATURE_KEY_FILE="bootloader/mcuboot/root-rsa-2048.pem"
+  sample.twixt.smp.serial_ble.nrf7002dk:
+    sysbuild: true
+    platform_allow: nrf7002dk/nrf5340/cpuapp
+    integration_platforms:
+      - nrf7002dk/nrf5340/cpuapp

@@ -1,0 +1,32 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+sample:
+  name: Ping over twixt
+common:
+  build_only: true
+  tags:
+    - i2c
+tests:
+  sample.twixt.ping.native_sim.pico:
+    platform_allow: native_sim
+    integration_platforms:
+      - native_sim
+    extra_args: MCU=pico
+  sample.twixt.ping.native_sim.nrf:
+    platform_allow: native_sim
+    integration_platforms:
+      - native_sim
+    extra_args: MCU=nrf
+  sample.twixt.ping.nrf7002dk:
+    platform_allow: nrf7002dk/nrf5340/cpuapp
+    integration_platforms:
+      - nrf7002dk/nrf5340/cpuapp
+  sample.twixt.ping.rpi_pico:
+    platform_allow: rpi_pico/rp2040/mcuboot
+    integration_platforms:
+      - rpi_pico/rp2040/mcuboot
+    extra_configs:
+      - CONFIG_BOOTLOADER_MCUBOOT=y
+      - CONFIG_MCUBOOT_BOOTLOADER_MODE_SWAP_USING_OFFSET=y
+      - CONFIG_MCUBOOT_SIGNATURE_KEY_FILE="bootloader/mcuboot/root-rsa-2048.pem"

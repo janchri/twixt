@@ -1,0 +1,54 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* nrf, the gateway: a Bluetooth device for each MCU, itself included. The cores talk over icmsg, in
+ * Zephyr itself, instead of the board's default that needs the open-amp module; hci_ipc.overlay is
+ * the other side.
+ */
+/delete-node/ &sram0_shared;
+
+/ {
+	chosen {
+		/delete-property/ zephyr,ipc_shm;
+	};
+
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		sram_tx: memory@20070000 {
+			reg = <0x20070000 0x2000>;
+		};
+
+		sram_rx: memory@20078000 {
+			reg = <0x20078000 0x2000>;
+		};
+	};
+
+	ipc {
+		/delete-node/ ipc0;
+
+		ipc0: ipc0 {
+			compatible = "zephyr,ipc-icmsg";
+			tx-region = <&sram_tx>;
+			rx-region = <&sram_rx>;
+			mboxes = <&mbox 0>, <&mbox 1>;
+			mbox-names = "tx", "rx";
+			status = "okay";
+
+			bt_hci_ipc0: bt_hci_ipc0 {
+				compatible = "zephyr,bt-hci-ipc";
+				status = "okay";
+			};
+		};
+	};
+
+	gateway-bt-pico {
+		compatible = "twixt,smp-gateway-bt";
+		peer = <&mcu_pico>;
+	};
+
+	gateway-bt-nrf {
+		compatible = "twixt,smp-gateway-bt";
+		peer = <&mcu_nrf>;
+	};
+};

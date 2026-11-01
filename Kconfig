@@ -1,0 +1,11 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+# The status byte of a response is an errno: on native_sim the numbers of the boards' libc, not the
+# host's. Outside any "if": the libc must not depend on I2C.
+choice LIBC_IMPLEMENTATION
+	default MINIMAL_LIBC if DT_HAS_TWIXT_I2C_MM_NATIVE_ENABLED
+endchoice
+
+rsource "drivers/Kconfig"
+rsource "subsys/Kconfig"

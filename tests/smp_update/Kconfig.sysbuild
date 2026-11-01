@@ -1,0 +1,7 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+source "share/sysbuild/Kconfig"
+
+config NET_CORE_IMAGE_HCI_IPC
+	bool "HCI IPC image on the nRF5340's network core, for ROUTE=ble"

@@ -1,0 +1,56 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+config I2C_MM_NATIVE
+	bool "Multi-master I2C port for native_sim"
+	default y
+	depends on DT_HAS_TWIXT_I2C_MM_NATIVE_ENABLED
+	depends on ARCH_POSIX
+	help
+	  I2C controller and target of one native_sim process, on a bus shared
+	  with other processes. See dts/bindings/i2c/twixt,i2c-mm-native.yaml.
+
+config I2C_MM_GPIO
+	bool "Multi-master I2C from a target-only block and GPIOs"
+	default y
+	depends on DT_HAS_TWIXT_I2C_MM_GPIO_ENABLED
+	depends on GPIO
+	select I2C_TARGET
+	select TIMING_FUNCTIONS if I2C_MM_GPIO_PORT = "generic"
+	imply DEVICE_DEINIT_SUPPORT
+	help
+	  Software controller with arbitration on the pins of a target-only
+	  I2C block, such as the nRF TWIS. A target block that refuses to be
+	  registered again after a transfer is initialized again
+	  (DEVICE_DEINIT_SUPPORT). See
+	  dts/bindings/i2c/twixt,i2c-mm-gpio.yaml.
+
+config I2C_MM_GPIO_PORT
+	string
+	default "rp2040" if SOC_SERIES_RP2040
+	default "generic"
+	depends on I2C_MM_GPIO
+	help
+	  The folder with this platform's i2c_mm_gpio_port.h: the pins and the
+	  counter. generic uses the GPIO API and the timing functions; a platform
+	  needs its own only where those are too slow for the bus.
+
+config I2C_MM_GPIO_INIT_PRIORITY
+	int "Init priority of the multi-master GPIO port"
+	default 55
+	depends on I2C_MM_GPIO
+	help
+	  After the target block (CONFIG_I2C_INIT_PRIORITY) and the GPIOs,
+	  before twixt (CONFIG_TWIXT_INIT_PRIORITY).
+
+config I2C_MM_TARGET_REREGISTER
+	bool "The link registers the target again after every transfer"
+	default y if DT_HAS_SNPS_DESIGNWARE_I2C_ENABLED && !I2C_MM_GPIO
+	help
+	  For drivers that leave target mode for a transfer and do not return to
+	  it, such as the DesignWare driver alone. I2C_MM_GPIO restores its target
+	  itself.
+
+# A byte on the native_sim bus is 90 us; a coarser tick would round it up
+configdefault SYS_CLOCK_TICKS_PER_SEC
+	default 100000 if I2C_MM_NATIVE
