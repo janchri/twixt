@@ -74,7 +74,7 @@ S 22 A | 01 A 10 A 00 A 41 A 42 A | Sr 23 A | 00 A 41 A 42 N P
 
 - **A request runs at most once.** The target runs it when the read arrives, and forgets it once answered or at a STOP. A read without a request gets `EBADMSG`.
 - **Services run in the I2C target interrupt,** so they must be short. Slower work is deferred: settings are saved by a work item, and an MCUmgr response comes back as a new transfer from the other MCU.
-- **The link retries** lost arbitration and a busy bus for 500 ms, and an address NACK for 5 ms by default. Other errors are not retried, because the request may have run.
+- **The link retries** lost arbitration and a busy bus for 500 ms, and an address NACK for 5 ms by default, counted from the first NACK. Other errors are not retried, because the request may have run.
 - **Errors say whether a request ran.** `-ENXIO`, `-EAGAIN`, `-EBUSY`, `-EIO` and `-EBADMSG` mean it did not. `-ETIMEDOUT` and `-ENOMSG` mean it may have.
 - **Arbitration follows the bytes on the wire.** The lowest frame wins: the destination address decides first, then the service id, then `src`.
 

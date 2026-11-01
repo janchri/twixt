@@ -25,8 +25,8 @@ config TWIXT_LINK_NACK_RETRY_MS
 	default 5
 	help
 	  An MCU sending itself may NACK its address until it is a target again.
-	  After this long the target counts as absent (-ENXIO). Other NACKs are
-	  not retried: the request may have run.
+	  This long after the first NACK of a request, the target counts as absent
+	  (-ENXIO). Other NACKs are not retried: the request may have run.
 
 module = TWIXT_LINK
 module-str = twixt_link
