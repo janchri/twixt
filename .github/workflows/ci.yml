@@ -1,0 +1,51 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  twister:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: twixt
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: zephyrproject-rtos/action-zephyr-setup@v1.0.9
+        with:
+          app-path: twixt
+          toolchains: arm-zephyr-eabi
+
+      # The platforms come from platform_allow in each tests.yaml
+      - name: Run the tests on native_sim, build everything else
+        run: west twister --all -T twixt --inline-logs --outdir twister-out
+
+      - name: Keep the results
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: twister-results
+          path: |
+            twister-out/twister.json
+            twister-out/twister.log
+            twister-out/**/handler.log
+            twister-out/**/twister_harness.log
+          retention-days: 7
