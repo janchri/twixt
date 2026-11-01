@@ -11,12 +11,14 @@
 #include <zephyr/shell/shell.h>
 
 #include <twixt/twixt.h>
-#include <twixt/settings.h>
+#include <twixt/service/settings.h>
+
+#include "twixt_internal.h"
 
 BUILD_ASSERT(1 + TWIXT_SETTINGS_KEY_MAX + TWIXT_SETTINGS_VALUE_MAX <= TWIXT_REQ_DATA_MAX,
-	     "a SET must fit CONFIG_I2C_MM_MSG_MAX");
+	     "a SET must fit CONFIG_TWIXT_LINK_MSG_MAX");
 BUILD_ASSERT(1 + TWIXT_SETTINGS_VALUE_MAX <= TWIXT_RSP_DATA_MAX,
-	     "a GET response must fit CONFIG_I2C_MM_MSG_MAX");
+	     "a GET response must fit CONFIG_TWIXT_LINK_MSG_MAX");
 
 static void save(struct k_work *work)
 {
@@ -34,8 +36,11 @@ static int get(const char *key, uint8_t *rsp_data)
 	if (ret < 0) {
 		return ret;
 	}
+	if (ret > UINT8_MAX) {
+		return -EOVERFLOW; /* the length is one byte on the wire */
+	}
 	rsp_data[0] = ret;
-	return 1 + ret;
+	return 1 + MIN(ret, TWIXT_SETTINGS_VALUE_MAX);
 }
 
 static int set(const char *key, const uint8_t *value, size_t len)

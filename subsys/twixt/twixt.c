@@ -13,11 +13,13 @@
 
 #include <twixt/twixt.h>
 
+#include "twixt_internal.h"
+
 LOG_MODULE_REGISTER(twixt, CONFIG_TWIXT_LOG_LEVEL);
 
 BUILD_ASSERT(DT_NODE_EXISTS(TWIXT_SELF), "twixt needs /chosen twixt,self");
 
-static struct i2c_mm link;
+static struct twixt_link link;
 
 const char *twixt_self_name(void)
 {
@@ -29,12 +31,19 @@ uint8_t twixt_self_addr(void)
 	return DT_REG_ADDR(TWIXT_SELF);
 }
 
-void twixt_get_stats(struct i2c_mm_stats *stats)
+void twixt_get_stats(struct twixt_link_stats *stats)
 {
-	i2c_mm_get_stats(&link, stats);
+	twixt_link_get_stats(&link, stats);
 }
 
 #define TWIXT_BADMSG_TRIES 3
+#define STATUS_NO_ANSWER   0xff
+
+static bool is_link_errno(int ret)
+{
+	return ret == -ENXIO || ret == -EIO || ret == -ETIMEDOUT || ret == -EAGAIN ||
+	       ret == -EBUSY || ret == -EBADMSG || ret == -ENOMSG;
+}
 
 static size_t serve(const uint8_t *req, size_t len, uint8_t *rsp)
 {
@@ -51,9 +60,11 @@ static size_t serve(const uint8_t *req, size_t len, uint8_t *rsp)
 		STRUCT_SECTION_FOREACH(twixt_service, s) {
 			if (s->id == req[0]) {
 				ret = s->handler(&r, &rsp[1]);
-				if (ret == -EIO || ret == -EAGAIN || ret == -EBUSY ||
-				    ret == -EBADMSG) {
+				if (is_link_errno(ret)) {
 					LOG_ERR("service 0x%02x: %d is for the bus", s->id, ret);
+					ret = -EFAULT;
+				} else if (ret > TWIXT_RSP_DATA_MAX) {
+					LOG_ERR("service 0x%02x: %d bytes do not fit", s->id, ret);
 					ret = -EFAULT;
 				}
 				break;
@@ -61,7 +72,7 @@ static size_t serve(const uint8_t *req, size_t len, uint8_t *rsp)
 		}
 	}
 	/* errno without its sign: Zephyr's errno values go past 127 (ENOTSUP is 134) */
-	rsp[0] = ret < 0 ? MIN(-ret, UINT8_MAX) : 0;
+	rsp[0] = ret < 0 ? MIN(-ret, STATUS_NO_ANSWER - 1) : 0;
 	return 1 + MAX(ret, 0);
 }
 
@@ -83,7 +94,8 @@ int twixt_request(uint8_t addr, uint8_t service, const void *data, size_t len, v
 	}
 
 	for (int i = 1;; i++) {
-		ret = i2c_mm_transfer(&link, addr, req, TWIXT_REQ_HDR_LEN + len, in, 1 + rsp_len);
+		ret = twixt_link_transfer(&link, addr, req, TWIXT_REQ_HDR_LEN + len, in,
+					  1 + rsp_len);
 		if (ret) {
 			return ret;
 		}
@@ -92,6 +104,9 @@ int twixt_request(uint8_t addr, uint8_t service, const void *data, size_t len, v
 		}
 		LOG_WRN("0x%02x: request to 0x%02x attempt %d: incomplete there, again",
 			twixt_self_addr(), addr, i);
+	}
+	if (in[0] == STATUS_NO_ANSWER) {
+		return -ENOMSG;
 	}
 	if (in[0] != 0) {
 		return -in[0];
@@ -122,7 +137,7 @@ static int twixt_init(void)
 	if (!ids_unique()) {
 		return -EEXIST;
 	}
-	return i2c_mm_init(&link, DEVICE_DT_GET(DT_BUS(TWIXT_SELF)), twixt_self_addr(), serve);
+	return twixt_link_init(&link, DEVICE_DT_GET(DT_BUS(TWIXT_SELF)), twixt_self_addr(), serve);
 }
 
 SYS_INIT(twixt_init, POST_KERNEL, CONFIG_TWIXT_INIT_PRIORITY);
@@ -144,11 +159,13 @@ int twixt_shell_parse_addr(const struct shell *sh, const char *arg, uint8_t *add
 
 static int cmd_stats(const struct shell *sh, size_t argc, char **argv)
 {
-	struct i2c_mm_stats s;
+	struct twixt_link_stats s;
 
-	i2c_mm_get_stats(&link, &s);
-	shell_print(sh, "%s at 0x%02x: sent %u, served %u, retries %u", twixt_self_name(),
-		    twixt_self_addr(), s.sent, s.served, s.retries);
+	twixt_link_get_stats(&link, &s);
+	shell_print(sh,
+		    "%s at 0x%02x: sent %u, served %u, retries %u, target restore failures %u%s",
+		    twixt_self_name(), twixt_self_addr(), s.sent, s.served, s.retries,
+		    s.target_restore_failures, s.target_down ? " (target down)" : "");
 	return 0;
 }
 

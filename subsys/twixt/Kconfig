@@ -1,13 +1,46 @@
 # Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
+menuconfig TWIXT_LINK
+	bool "Multi-master I2C link: one request/response transfer each"
+	select I2C_TARGET
+	help
+	  See <twixt/link.h>.
+
+if TWIXT_LINK
+
+config TWIXT_LINK_MSG_MAX
+	int "Longest request or response"
+	default 64
+	range 8 255
+	help
+	  In bytes. The same on every MCU of the bus.
+
+config TWIXT_LINK_RETRY_MS
+	int "Retry time after lost arbitration or a busy bus, in ms"
+	default 500
+
+config TWIXT_LINK_NACK_RETRY_MS
+	int "Retry time after an address NACK, in ms"
+	default 5
+	help
+	  An MCU sending itself may NACK its address until it is a target again.
+	  After this long the target counts as absent (-ENXIO). Other NACKs are
+	  not retried: the request may have run.
+
+module = TWIXT_LINK
+module-str = twixt_link
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # TWIXT_LINK
+
 DT_CHOSEN_TWIXT_SELF := twixt,self
 
 menuconfig TWIXT
 	bool "twixt: services between equal MCUs on a multi-master I2C bus"
 	default y if $(dt_chosen_enabled,$(DT_CHOSEN_TWIXT_SELF))
 	depends on I2C
-	select I2C_MM
+	select TWIXT_LINK
 	help
 	  On with /chosen twixt,self. See <twixt/twixt.h>.
 
@@ -24,61 +57,12 @@ config TWIXT_SHELL
 	default y
 	depends on SHELL
 
-config TWIXT_PING
-	bool "Ping service"
-	default y
-	help
-	  Every MCU should answer it. See <twixt/ping.h>.
-
-config TWIXT_ECHO
-	bool "Echo service"
-	default y
-	help
-	  Answers with the request data, for tests of the bus. See
-	  <twixt/echo.h>.
-
-config TWIXT_STRESS
-	bool "Echo load"
-	depends on TWIXT_ECHO
-	help
-	  A thread sends echo requests round-robin, with every length up to
-	  the limit, and checks every answer byte. See <twixt/stress.h>. With
-	  CONFIG_TWIXT_SHELL also "twixt stress start <interval_ms> <seconds>
-	  <addr>..." (0 s: until "twixt stress stop"), and "twixt stress" for
-	  the counts. The targets need CONFIG_TWIXT_ECHO.
-
-config TWIXT_STRESS_STACK_SIZE
-	int "Stack of the load thread"
-	default 1024
-	depends on TWIXT_STRESS
-
-config TWIXT_SMP
-	bool "MCUmgr service"
-	depends on MCUMGR
-	select CRC if TWIXT_SMP_CRC
-	help
-	  MCUmgr (SMP) over the bus: this MCU's MCUmgr answers requests from
-	  the others, and twixt_smp_send() sends packets to them. See
-	  <twixt/smp.h>.
-
-if TWIXT_SMP
-
-config TWIXT_SMP_CRC
-	bool "CRC-16 over each packet"
-	default y
-	help
-	  The same on every MCU of the bus. A packet with a wrong CRC is
-	  dropped; the sender of a request then times out.
-
-config TWIXT_SMP_PEERS
-	int "Packets coming in at the same time"
-	default 4
-	help
-	  One per MCU sending to this one at once.
-
-endif # TWIXT_SMP
-
-rsource "Kconfig.settings"
+rsource "service/Kconfig.ping"
+rsource "service/Kconfig.echo"
+rsource "service/Kconfig.settings"
+rsource "service/Kconfig.smp"
+rsource "client/Kconfig.stress"
+rsource "client/Kconfig.smp_gateway"
 
 module = TWIXT
 module-str = twixt

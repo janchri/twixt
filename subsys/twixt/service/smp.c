@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * MCUmgr (SMP) over twixt, see <twixt/smp.h>. Fragments arrive in the I2C
+ * MCUmgr (SMP) over twixt, see <twixt/service/smp.h>. Fragments arrive in the I2C
  * target interrupt: a packet is put together per sender, then handed to
  * MCUmgr (requests) or to twixt_smp_rsp_get() (responses).
  */
@@ -15,12 +15,13 @@
 #include <zephyr/mgmt/mcumgr/mgmt/mgmt_defines.h>
 #include <zephyr/mgmt/mcumgr/smp/smp.h>
 #include <zephyr/mgmt/mcumgr/transport/smp.h>
+#include <zephyr/shell/shell.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/crc.h>
 
 #include <mgmt/mcumgr/transport/smp_internal.h>
 
-#include <twixt/smp.h>
+#include <twixt/service/smp.h>
 #include <twixt/twixt.h>
 
 LOG_MODULE_REGISTER(twixt_smp, CONFIG_TWIXT_LOG_LEVEL);
@@ -28,6 +29,10 @@ LOG_MODULE_REGISTER(twixt_smp, CONFIG_TWIXT_LOG_LEVEL);
 #define SMP_HDR_LEN 8
 #define CRC_LEN     (IS_ENABLED(CONFIG_TWIXT_SMP_CRC) ? 2 : 0)
 #define INDEX_MASK  0x7f
+#define OP_MASK     0x07
+
+BUILD_ASSERT(CONFIG_TWIXT_SMP_RSP_MAX < CONFIG_MCUMGR_TRANSPORT_NETBUF_COUNT,
+	     "responses waiting must leave MCUmgr buffers for the rest");
 
 struct peer {
 	struct net_buf *nb; /* the packet coming in, NULL: none */
@@ -35,7 +40,8 @@ struct peer {
 	uint8_t crc[2];     /* outside nb, so that a packet as large as MCUmgr's buffer fits */
 	uint8_t crc_len;
 	uint8_t addr;
-	uint8_t next; /* index of the fragment expected next */
+	uint8_t next;    /* index of the fragment expected next */
+	uint32_t active; /* k_uptime_get_32() of the last fragment */
 };
 
 static struct k_spinlock lock;
@@ -44,12 +50,21 @@ static struct smp_transport transport;
 static K_FIFO_DEFINE(rsp_fifo);
 static K_MUTEX_DEFINE(send_lock);
 static atomic_t client;
+static atomic_t rsp_queued;
+static struct twixt_smp_stats stats;
 
-static bool is_request(const struct net_buf *nb)
+static bool is_request(uint8_t hdr)
 {
-	uint8_t op = nb->data[0] & 0x07;
+	uint8_t op = hdr & OP_MASK;
 
 	return op == MGMT_OP_READ || op == MGMT_OP_WRITE;
+}
+
+static bool is_response(uint8_t hdr)
+{
+	uint8_t op = hdr & OP_MASK;
+
+	return op == MGMT_OP_READ_RSP || op == MGMT_OP_WRITE_RSP;
 }
 
 static void drop(struct peer *p)
@@ -57,6 +72,38 @@ static void drop(struct peer *p)
 	if (p->nb != NULL) {
 		smp_packet_free(p->nb);
 		p->nb = NULL;
+	}
+}
+
+/* A sender gone in the middle of a packet must not keep its buffer: MCUmgr's are shared */
+static void expire(struct k_work *work);
+static K_WORK_DELAYABLE_DEFINE(expire_work, expire);
+
+static void expire(struct k_work *work)
+{
+	bool waiting = false;
+
+	ARG_UNUSED(work);
+	K_SPINLOCK(&lock) {
+		uint32_t now = k_uptime_get_32();
+
+		for (size_t i = 0; i < ARRAY_SIZE(peers); i++) {
+			struct peer *p = &peers[i];
+
+			if (p->nb == NULL) {
+				continue;
+			}
+			if (now - p->active >= CONFIG_TWIXT_SMP_TIMEOUT_MS) {
+				LOG_WRN("0x%02x: incomplete packet dropped", p->addr);
+				drop(p);
+				stats.expired++;
+			} else {
+				waiting = true;
+			}
+		}
+	}
+	if (waiting) {
+		k_work_schedule(&expire_work, K_MSEC(CONFIG_TWIXT_SMP_TIMEOUT_MS));
 	}
 }
 
@@ -75,7 +122,6 @@ static struct peer *peer_of(uint8_t addr)
 	return free;
 }
 
-/* A whole packet: CRC off, then to MCUmgr or to the responses */
 static void deliver(struct peer *p)
 {
 	struct net_buf *nb = p->nb;
@@ -89,11 +135,16 @@ static void deliver(struct peer *p)
 		}
 	}
 	*(uint8_t *)net_buf_user_data(nb) = p->addr;
-	if (is_request(nb)) {
+	if (is_request(nb->data[0])) {
 		smp_rx_req(&transport, nb);
-	} else if (atomic_get(&client)) {
+	} else if (!is_response(nb->data[0])) {
+		LOG_WRN("0x%02x: no SMP op, packet dropped", p->addr);
+		smp_packet_free(nb);
+	} else if (atomic_get(&client) && atomic_get(&rsp_queued) < CONFIG_TWIXT_SMP_RSP_MAX) {
+		atomic_inc(&rsp_queued);
 		k_fifo_put(&rsp_fifo, nb);
 	} else {
+		stats.rsp_dropped++;
 		smp_packet_free(nb);
 	}
 }
@@ -133,13 +184,13 @@ static int serve_locked(const struct twixt_req *req)
 		uint8_t c = req->data[1 + i];
 
 		if (p->len == 0 || p->nb->len < p->len) {
-			if (net_buf_tailroom(p->nb) == 0) {
-				drop(p);
-				return -EMSGSIZE;
-			}
 			net_buf_add_u8(p->nb, c);
 			if (p->nb->len == SMP_HDR_LEN) {
 				p->len = SMP_HDR_LEN + sys_get_be16(&p->nb->data[2]);
+				if (p->len > p->nb->len + net_buf_tailroom(p->nb)) {
+					drop(p);
+					return -EMSGSIZE;
+				}
 			}
 		} else if (p->crc_len < CRC_LEN) {
 			p->crc[p->crc_len++] = c;
@@ -150,6 +201,9 @@ static int serve_locked(const struct twixt_req *req)
 	}
 	if (p->len != 0 && p->nb->len == p->len && p->crc_len == CRC_LEN) {
 		deliver(p);
+	} else {
+		p->active = k_uptime_get_32();
+		k_work_schedule(&expire_work, K_MSEC(CONFIG_TWIXT_SMP_TIMEOUT_MS));
 	}
 	return 0;
 }
@@ -179,7 +233,7 @@ int twixt_smp_send(uint8_t addr, const uint8_t *pkt, size_t len)
 	if (IS_ENABLED(CONFIG_TWIXT_SMP_CRC)) {
 		sys_put_be16(crc16_itu_t(0, pkt, len), crc);
 	}
-	if (len >= 1 && ((pkt[0] & 0x07) == MGMT_OP_READ || (pkt[0] & 0x07) == MGMT_OP_WRITE)) {
+	if (len >= 1 && is_request(pkt[0])) {
 		atomic_set(&client, 1);
 	}
 
@@ -202,13 +256,22 @@ struct net_buf *twixt_smp_rsp_get(uint8_t *src, k_timeout_t timeout)
 {
 	struct net_buf *nb = k_fifo_get(&rsp_fifo, timeout);
 
-	if (nb != NULL && src != NULL) {
-		*src = *(uint8_t *)net_buf_user_data(nb);
+	if (nb != NULL) {
+		atomic_dec(&rsp_queued);
+		if (src != NULL) {
+			*src = *(uint8_t *)net_buf_user_data(nb);
+		}
 	}
 	return nb;
 }
 
-/* MCUmgr's response goes back to the MCU that sent the request */
+void twixt_smp_get_stats(struct twixt_smp_stats *out)
+{
+	K_SPINLOCK(&lock) {
+		*out = stats;
+	}
+}
+
 static int output(struct net_buf *nb)
 {
 	int ret = twixt_smp_send(*(uint8_t *)net_buf_user_data(nb), nb->data, nb->len);
@@ -233,3 +296,19 @@ static void twixt_smp_setup(void)
 }
 
 MCUMGR_HANDLER_DEFINE(twixt_smp, twixt_smp_setup);
+
+#ifdef CONFIG_TWIXT_SHELL
+
+static int cmd_smp(const struct shell *sh, size_t argc, char **argv)
+{
+	struct twixt_smp_stats s;
+
+	twixt_smp_get_stats(&s);
+	shell_print(sh, "incomplete packets expired %u, responses dropped %u", s.expired,
+		    s.rsp_dropped);
+	return 0;
+}
+
+SHELL_SUBCMD_ADD((twixt), smp, NULL, "MCUmgr packets dropped", cmd_smp, 1, 0);
+
+#endif /* CONFIG_TWIXT_SHELL */

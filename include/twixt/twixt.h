@@ -17,7 +17,7 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/sys/iterable_sections.h>
 
-#include <drivers/i2c/i2c_mm.h>
+#include <twixt/link.h>
 
 /**
  * @defgroup twixt twixt
@@ -25,7 +25,7 @@
  *
  * This MCU is /chosen twixt,self, a "twixt,mcu" on its I2C bus.
  * It serves requests at its address from boot on and sends requests to the
- * others, one link transfer each (@ref i2c_mm):
+ * others, one link transfer each (@ref twixt_link):
  *
  *     request:   service, src, flags, data
  *     response:  status, data
@@ -33,7 +33,12 @@
  * @c service picks the service (see the service ids), @c src is the sender's
  * address, @c flags is reserved: written as 0, ignored on receipt. @c status is 0 or an errno
  * without its sign; an error has no data. EBADMSG means the request did not arrive whole
- * (shorter than its header): no service ran, and twixt_request() sends it again.
+ * (shorter than its header): no service ran, and twixt_request() sends it again. Status 0xff is
+ * what a read gets when nobody answers it, and is never sent.
+ *
+ * An errno of the link never comes from a service, so it names the link: -ENXIO, -EIO, -ETIMEDOUT,
+ * -EAGAIN, -EBUSY, -EBADMSG and -ENOMSG, see twixt_request(). A service returning one of them
+ * gets -EFAULT to the sender instead.
  *
  * The lowest frame wins arbitration, so a lower service id has the higher
  * priority.
@@ -46,11 +51,11 @@
  * twixt; applications use TWIXT_SERVICE_APP and up.
  * @{
  */
-#define TWIXT_SERVICE_PING     0x00 /**< <twixt/ping.h> */
-#define TWIXT_SERVICE_ECHO     0x01 /**< <twixt/echo.h> */
-#define TWIXT_SERVICE_SETTINGS 0x02 /**< <twixt/settings.h> */
+#define TWIXT_SERVICE_PING     0x00 /**< <twixt/service/ping.h> */
+#define TWIXT_SERVICE_ECHO     0x01 /**< <twixt/service/echo.h> */
+#define TWIXT_SERVICE_SETTINGS 0x02 /**< <twixt/service/settings.h> */
 #define TWIXT_SERVICE_UART     0x10 /**< twixt,uart */
-#define TWIXT_SERVICE_SMP      0x20 /**< <twixt/smp.h> */
+#define TWIXT_SERVICE_SMP      0x20 /**< <twixt/service/smp.h> */
 #define TWIXT_SERVICE_APP      0x80 /**< First id for applications */
 /** @} */
 
@@ -58,7 +63,7 @@
 #define TWIXT_PROTOCOL_VERSION 1
 
 /** Longest request and longest response, header and status included */
-#define TWIXT_MSG_MAX I2C_MM_MSG_MAX
+#define TWIXT_MSG_MAX TWIXT_LINK_MSG_MAX
 
 /** Request header: service, src, flags */
 #define TWIXT_REQ_HDR_LEN 3
@@ -89,7 +94,7 @@ struct twixt_service {
 	/**
 	 * @brief Answer a request.
 	 *
-	 * Runs as i2c_mm_serve_cb does. -EIO, -EAGAIN and -EBUSY mean "bus" to the
+	 * Runs as twixt_link_serve_cb does. The errnos of the link (see above) mean "bus" to the
 	 * caller, so twixt sends them as -EFAULT.
 	 *
 	 * @param req Request.
@@ -120,12 +125,12 @@ const char *twixt_self_name(void);
 uint8_t twixt_self_addr(void);
 
 /** @brief Copy the statistics of this MCU's link. @param stats Copy. */
-void twixt_get_stats(struct i2c_mm_stats *stats);
+void twixt_get_stats(struct twixt_link_stats *stats);
 
 /**
  * @brief Send a request and read the data of the response.
  *
- * Transfers as i2c_mm_transfer() does; data the service did not write reads
+ * Transfers as twixt_link_transfer() does; data the service did not write reads
  * as 0xff.
  *
  * @param addr MCU to send to, may be this one.
@@ -136,11 +141,14 @@ void twixt_get_stats(struct i2c_mm_stats *stats);
  * @param rsp_len Response data bytes to read, up to TWIXT_RSP_DATA_MAX.
  *
  * @retval 0 Done.
- * @retval -EIO Nobody answers at @p addr.
- * @retval -EAGAIN Lost arbitration until the deadline.
- * @retval -EBUSY Bus busy until the deadline.
+ * @retval -ENXIO Nobody answers at @p addr: the request did not run.
+ * @retval -EAGAIN Lost arbitration until the deadline: it did not run.
+ * @retval -EBUSY Bus busy until the deadline: it did not run.
+ * @retval -EIO The target refused a byte, or the bus is stuck: it did not run.
+ * @retval -EBADMSG The request did not arrive whole, three times: it did not run.
+ * @retval -ETIMEDOUT SCL held low for too long: it may have run.
+ * @retval -ENOMSG The status read as 0xff, no answer: it may have run.
  * @retval -ENOTSUP No such service there.
- * @retval -EBADMSG The request did not arrive whole, three times.
  * @retval -errno Error of the service.
  */
 int twixt_request(uint8_t addr, uint8_t service, const void *data, size_t len, void *rsp_data,
@@ -149,19 +157,6 @@ int twixt_request(uint8_t addr, uint8_t service, const void *data, size_t len, v
 #if defined(CONFIG_TWIXT_SHELL) || defined(__DOXYGEN__)
 struct shell;
 
-/**
- * @brief Parse an I2C address, for shell commands of services.
- *
- * Services add their commands under "twixt" with SHELL_SUBCMD_ADD((twixt), ...).
- *
- * @param sh Shell, for the error.
- * @param arg Text to parse.
- * @param addr Address.
- *
- * @retval 0 Parsed.
- * @retval -EINVAL Not an address; the error is printed.
- */
-int twixt_shell_parse_addr(const struct shell *sh, const char *arg, uint8_t *addr);
 #endif
 
 /** @} */

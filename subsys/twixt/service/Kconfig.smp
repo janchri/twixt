@@ -1,0 +1,46 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+menuconfig TWIXT_SMP
+	bool "MCUmgr service"
+	depends on MCUMGR
+	select CRC if TWIXT_SMP_CRC
+	help
+	  This MCU's MCUmgr answers SMP requests from the others, and
+	  twixt_smp_send() sends packets to them. See <twixt/service/smp.h>.
+
+if TWIXT_SMP
+
+config TWIXT_SMP_CRC
+	bool "CRC-16 over each packet"
+	default y
+	help
+	  The same on every MCU of the bus. A packet with a wrong CRC is
+	  dropped; the sender of a request then times out.
+
+config TWIXT_SMP_PEERS
+	int "Packets coming in at the same time"
+	default 4
+	help
+	  One per MCU sending to this one at once. Each holds one buffer of
+	  CONFIG_MCUMGR_TRANSPORT_NETBUF_COUNT while it comes in; a sender
+	  finding the pool empty gets -ENOMEM and may try again.
+
+config TWIXT_SMP_TIMEOUT_MS
+	int "Silence that drops an incomplete packet, in ms"
+	default 5000
+	range 1 3600000
+	help
+	  Between one and two times this long after its last fragment. Longer
+	  than a sender may pause between fragments, including
+	  CONFIG_TWIXT_LINK_RETRY_MS on a busy bus.
+
+config TWIXT_SMP_RSP_MAX
+	int "Responses waiting for twixt_smp_rsp_get()"
+	default 2
+	range 1 255
+	help
+	  Each holds one MCUmgr buffer; further responses are dropped and
+	  counted. Less than CONFIG_MCUMGR_TRANSPORT_NETBUF_COUNT.
+
+endif # TWIXT_SMP

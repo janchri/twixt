@@ -11,8 +11,10 @@
 #include <zephyr/sys/atomic.h>
 
 #include <twixt/twixt.h>
-#include <twixt/echo.h>
-#include <twixt/stress.h>
+#include <twixt/service/echo.h>
+#include <twixt/client/stress.h>
+
+#include "twixt_internal.h"
 
 #define TARGETS_MAX TWIXT_STRESS_TARGETS_MAX
 #define ERRNOS_MAX  4

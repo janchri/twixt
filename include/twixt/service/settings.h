@@ -9,8 +9,8 @@
  * @brief Settings service of twixt.
  */
 
-#ifndef TWIXT_SETTINGS_H_
-#define TWIXT_SETTINGS_H_
+#ifndef TWIXT_SERVICE_SETTINGS_H_
+#define TWIXT_SERVICE_SETTINGS_H_
 
 #include <stdint.h>
 
@@ -58,6 +58,7 @@
  * @retval -ENOENT No such setting.
  * @retval -EINVAL No handler for the subtree, or key too long.
  * @retval -ENOTSUP The MCU serves no settings.
+ * @retval -EOVERFLOW Value longer than 255 bytes: its length does not fit the response.
  */
 int twixt_settings_get(uint8_t addr, const char *key, void *data, uint8_t len);
 
@@ -77,4 +78,4 @@ int twixt_settings_set(uint8_t addr, const char *key, const void *data, uint8_t 
 
 /** @} */
 
-#endif /* TWIXT_SETTINGS_H_ */
+#endif /* TWIXT_SERVICE_SETTINGS_H_ */

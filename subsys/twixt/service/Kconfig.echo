@@ -1,0 +1,9 @@
+# Copyright (c) 2026 Christoph Jans <jans.christoph@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+config TWIXT_ECHO
+	bool "Echo service"
+	default y
+	help
+	  Answers with the request data, for tests of the bus. See
+	  <twixt/service/echo.h>.

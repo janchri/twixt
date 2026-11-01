@@ -9,8 +9,8 @@
  * @brief Ping service of twixt.
  */
 
-#ifndef TWIXT_PING_H_
-#define TWIXT_PING_H_
+#ifndef TWIXT_SERVICE_PING_H_
+#define TWIXT_SERVICE_PING_H_
 
 #include <stdint.h>
 #include <zephyr/kernel.h>
@@ -58,11 +58,11 @@ int twixt_ping(uint8_t addr, struct twixt_ping_info *info);
  * @param info What it answered.
  * @param timeout How long to keep trying.
  *
- * @retval -EIO Nobody answered within @p timeout.
+ * @retval -ENXIO Nobody answered within @p timeout.
  * @retval others As twixt_ping().
  */
 int twixt_ping_wait(uint8_t addr, struct twixt_ping_info *info, k_timeout_t timeout);
 
 /** @} */
 
-#endif /* TWIXT_PING_H_ */
+#endif /* TWIXT_SERVICE_PING_H_ */

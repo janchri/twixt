@@ -9,8 +9,8 @@
  * @brief Echo service of twixt.
  */
 
-#ifndef TWIXT_ECHO_H_
-#define TWIXT_ECHO_H_
+#ifndef TWIXT_SERVICE_ECHO_H_
+#define TWIXT_SERVICE_ECHO_H_
 
 #include <stddef.h>
 #include <stdint.h>
@@ -52,4 +52,4 @@ int twixt_echo(uint8_t addr, const void *data, size_t len, void *back);
 
 /** @} */
 
-#endif /* TWIXT_ECHO_H_ */
+#endif /* TWIXT_SERVICE_ECHO_H_ */

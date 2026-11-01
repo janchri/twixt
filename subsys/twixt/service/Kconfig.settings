@@ -6,7 +6,7 @@ menuconfig TWIXT_SETTINGS
 	depends on SETTINGS
 	select SETTINGS_RUNTIME
 	help
-	  See <twixt/settings.h>.
+	  See <twixt/service/settings.h>.
 
 if TWIXT_SETTINGS
 

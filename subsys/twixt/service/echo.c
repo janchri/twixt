@@ -8,7 +8,9 @@
 #include <zephyr/shell/shell.h>
 
 #include <twixt/twixt.h>
-#include <twixt/echo.h>
+#include <twixt/service/echo.h>
+
+#include "twixt_internal.h"
 
 static int echo(const struct twixt_req *req, uint8_t *rsp_data)
 {

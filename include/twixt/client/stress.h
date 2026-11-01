@@ -9,8 +9,8 @@
  * @brief Echo load on the bus.
  */
 
-#ifndef TWIXT_STRESS_H_
-#define TWIXT_STRESS_H_
+#ifndef TWIXT_CLIENT_STRESS_H_
+#define TWIXT_CLIENT_STRESS_H_
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -88,4 +88,4 @@ size_t twixt_stress_get(struct twixt_stress_counts *counts, size_t max);
 }
 #endif
 
-#endif /* TWIXT_STRESS_H_ */
+#endif /* TWIXT_CLIENT_STRESS_H_ */

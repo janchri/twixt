@@ -6,7 +6,7 @@ description: |
   MCU the image runs on. See include/twixt/twixt.h.
 
     &i2c0 {
-            mcu_a: mcu-a@10 {
+            mcu_pico: pico@10 {
                     compatible = "twixt,mcu";
                     reg = <0x10>;
             };
@@ -14,7 +14,7 @@ description: |
 
     / {
             chosen {
-                    twixt,self = &mcu_a;
+                    twixt,self = &mcu_pico;
             };
     };
 

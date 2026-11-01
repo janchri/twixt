@@ -7,7 +7,9 @@
 #include <zephyr/shell/shell.h>
 
 #include <twixt/twixt.h>
-#include <twixt/ping.h>
+#include <twixt/service/ping.h>
+
+#include "twixt_internal.h"
 
 static int ping(const struct twixt_req *req, uint8_t *rsp_data)
 {
@@ -39,7 +41,7 @@ int twixt_ping_wait(uint8_t addr, struct twixt_ping_info *info, k_timeout_t time
 	k_timepoint_t end = sys_timepoint_calc(timeout);
 	int ret;
 
-	while ((ret = twixt_ping(addr, info)) == -EIO && !sys_timepoint_expired(end)) {
+	while ((ret = twixt_ping(addr, info)) == -ENXIO && !sys_timepoint_expired(end)) {
 		k_msleep(100);
 	}
 	return ret;
