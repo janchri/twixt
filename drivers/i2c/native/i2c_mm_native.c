@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * Multi-master I2C port for native_sim (dts/bindings/i2c/twixt,native-i2c-mm.yaml).
+ * Multi-master I2C port for native_sim (dts/bindings/i2c/twixt,i2c-mm-native.yaml).
  *
  * The wires are shared memory (i2c_mm_native_bottom.c). Target events raise this port's
  * interrupt line; a watcher thread plays the target's bus hardware.
@@ -12,7 +12,7 @@
  * process, identical arbitration keys (decided by arrival order).
  */
 
-#define DT_DRV_COMPAT twixt_native_i2c_mm
+#define DT_DRV_COMPAT twixt_i2c_mm_native
 
 #include <string.h>
 #include <irq_ctrl.h>
@@ -22,7 +22,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
-#include <drivers/i2c/i2c_mm_native.h>
+#include "i2c_mm_native.h"
 #include "i2c_mm_native_bottom.h"
 
 LOG_MODULE_REGISTER(i2c_mm_native, CONFIG_I2C_LOG_LEVEL);
@@ -35,7 +35,7 @@ BUILD_ASSERT(DT_NUM_INST_STATUS_OKAY(DT_DRV_COMPAT) <= 1, "one multi-master port
 
 enum mm_event {
 	MM_EV_ADDR_W,
-	MM_EV_ADDR_R, /* delivers the first byte */
+	MM_EV_ADDR_R,
 	MM_EV_WRITE,
 	MM_EV_READ,
 	MM_EV_STOP,
@@ -241,11 +241,11 @@ static int mm_transfer(const struct device *dev, struct i2c_msg *msgs, uint8_t n
 		bool rd = msgs[i].flags & I2C_MSG_READ;
 		uint8_t b = 0;
 
-		k_usleep((i == 0 ? 0 : d->bit_us) + byte_us); /* (repeated) START + address */
+		k_usleep((i == 0 ? 0 : d->bit_us) + byte_us);
 
 		if (tslot < 0 || mm_port_event(tslot, rd ? MM_EV_ADDR_R : MM_EV_ADDR_W, &b)) {
 			d->stats.nacks++;
-			ret = -EIO;
+			ret = -ENXIO;
 			break;
 		}
 		addressed = true;
@@ -270,7 +270,7 @@ static int mm_transfer(const struct device *dev, struct i2c_msg *msgs, uint8_t n
 	if (addressed) {
 		mm_port_event(tslot, MM_EV_STOP, NULL);
 	}
-	k_usleep(d->bit_us); /* STOP */
+	k_usleep(d->bit_us);
 	i2c_mm_native_bottom_release();
 out:
 	k_mutex_unlock(&d->xfer_lock);
@@ -379,39 +379,6 @@ void i2c_mm_native_get_stats(const struct device *dev, struct i2c_mm_native_stat
 	*stats = d->stats;
 }
 
-int i2c_mm_native_wait_targets(const struct device *dev, int count)
-{
-	ARG_UNUSED(dev);
-
-	return WAIT_FOR(i2c_mm_native_bottom_targets() >= count, 10 * USEC_PER_SEC, k_msleep(1))
-		       ? 0
-		       : -ETIMEDOUT;
-}
-
-int i2c_mm_native_wait_done(const struct device *dev, int count)
-{
-	ARG_UNUSED(dev);
-
-	i2c_mm_native_bottom_set_done();
-	return WAIT_FOR(i2c_mm_native_bottom_done_count() >= count, 10 * USEC_PER_SEC, k_msleep(1))
-		       ? 0
-		       : -ETIMEDOUT;
-}
-
-void i2c_mm_native_wait_round(const struct device *dev, uint32_t round, uint32_t period_ms)
-{
-	int64_t due_us = i2c_mm_native_bottom_epoch_us() + 1000000LL + round * period_ms * 1000LL;
-	int64_t wait_us;
-
-	/*
-	 * Not one long sleep: a sleep is simulated time, and a process that is behind the
-	 * wall clock catches up by running it faster, so the sleep would end too early.
-	 */
-	while ((wait_us = due_us - i2c_mm_native_bottom_wall_us()) > 0) {
-		k_usleep(wait_us > 400 ? wait_us / 2 : 200);
-	}
-}
-
 static int mm_init(const struct device *dev)
 {
 	const struct mm_config *cfg = dev->config;
@@ -441,7 +408,7 @@ static int mm_init(const struct device *dev)
 	k_thread_create(&d->watcher, d->watcher_stack, K_KERNEL_STACK_SIZEOF(d->watcher_stack),
 			mm_watcher, (void *)dev, NULL, NULL, K_HIGHEST_APPLICATION_THREAD_PRIO, 0,
 			K_NO_WAIT);
-	k_thread_name_set(&d->watcher, "i2c_mm_watcher");
+	k_thread_name_set(&d->watcher, "twixt_link_watcher");
 	return 0;
 }
 

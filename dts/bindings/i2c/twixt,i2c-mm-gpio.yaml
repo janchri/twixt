@@ -23,12 +23,18 @@ description: |
     clocks and a STOP recover it before the START.
   - SCL stretching is waited for up to stretch-timeout-us.
   - During its own transfer the port NACKs its address: the other MCUs need
-    CONFIG_I2C_MM_NACK_RETRY_MS longer than its longest transfer, a request
-    and a response of CONFIG_I2C_MM_MSG_MAX bytes each.
+    CONFIG_TWIXT_LINK_NACK_RETRY_MS longer than its longest transfer, a request
+    and a response of CONFIG_TWIXT_LINK_MSG_MAX bytes each.
   - It ends its STOP by registering the target again, so the target is back
     before the bus is free.
+  - In target buffer mode it reports a STOP after a write to the target when
+    SCL and SDA stay high for two bit times after the end of the write, in the
+    target's interrupt: the target block must hold SCL low until it has the
+    response to a read after a repeated START (the nRF TWIS does), and its
+    driver need not report STOP itself.
   - The CPU clocks the bus; the high phase of each bit runs with interrupts
-    locked, about half a bit time.
+    locked, about half a bit time, and so does the last bus-free-us before
+    each START.
 
     i2c-mm {
             compatible = "twixt,i2c-mm-gpio";
@@ -39,7 +45,7 @@ description: |
             #address-cells = <1>;
             #size-cells = <0>;
 
-            mcu_a: mcu-a@10 {
+            mcu_pico: pico@10 {
                     compatible = "twixt,mcu";
                     reg = <0x10>;
             };
@@ -91,4 +97,4 @@ properties:
   stretch-timeout-us:
     type: int
     default: 10000
-    description: How long a target may hold SCL low before -EIO
+    description: How long a target may hold SCL low before -ETIMEDOUT

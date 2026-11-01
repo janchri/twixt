@@ -3,13 +3,8 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * Multi-master I2C from a target-only I2C block and two GPIOs on its pins
- * (dts/bindings/i2c/twixt,i2c-mm-gpio.yaml).
- *
- * The target block serves requests. For its own transfer the port unregisters
- * the target, which hands the pins back to the GPIOs, clocks the transfer in
- * software and registers the target again. Every bit is read back: a 1 that
- * reads 0 is lost arbitration (-EAGAIN). Meanwhile the target NACKs its address.
+ * Multi-master I2C from a target-only I2C block and two GPIOs on its pins: how it works from the
+ * outside is in dts/bindings/i2c/twixt,i2c-mm-gpio.yaml.
  *
  * The high phase of a bit runs with interrupts locked, so the bit is sampled
  * while SCL is high and no other controller's clock cycle is missed.
@@ -20,8 +15,7 @@
  * speed with the code around them (e.g. through an XIP cache). The waits poll SCL, for clock
  * stretching and other controllers.
  *
- * The counter is that of the timing functions. On the RP2040 it is the 1 MHz timer and the pins
- * are SIO registers: k_cycle_get_32() and the GPIO API take about 1 us per call there.
+ * The pins and the counter are in i2c_mm_gpio_port.h, in the folder CONFIG_I2C_MM_GPIO_PORT names.
  */
 
 #define DT_DRV_COMPAT twixt_i2c_mm_gpio
@@ -33,16 +27,11 @@
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
-#include <zephyr/timing/timing.h>
-
-#ifdef CONFIG_SOC_SERIES_RP2040
-#include <hardware/structs/sio.h>
-#include <hardware/structs/timer.h>
-#endif
 
 LOG_MODULE_REGISTER(i2c_mm_gpio, CONFIG_I2C_LOG_LEVEL);
 
-#include "target_reregister.h"
+#include "i2c_mm_gpio_port.h"
+#include "target_restore.h"
 
 #define STRETCH_LOCKED_US 100
 #define RECOVERY_CLOCKS   9
@@ -52,6 +41,7 @@ LOG_MODULE_REGISTER(i2c_mm_gpio, CONFIG_I2C_LOG_LEVEL);
 struct mm_gpio_config {
 	const struct device *target;
 	const struct pinctrl_dev_config *pcfg; /* NULL: the target takes its pins back itself */
+	int target_irq;
 	struct gpio_dt_spec scl;
 	struct gpio_dt_spec sda;
 	uint32_t bitrate;
@@ -62,7 +52,12 @@ struct mm_gpio_config {
 
 struct mm_gpio_data {
 	struct k_mutex lock;
-	struct i2c_target_config *target_cfg;
+	struct i2c_target_config *target_cfg; /* registered at the target block */
+	struct i2c_target_config *user_cfg;   /* registered here */
+#ifdef CONFIG_I2C_TARGET_BUFFER_MODE
+	struct i2c_target_config own_cfg;
+	const struct mm_gpio_config *cfg;
+#endif
 	uint32_t dev_config;
 	uint32_t cycles_per_us;
 	uint32_t t_low; /* in cycles of the counter, like all times below */
@@ -70,55 +65,6 @@ struct mm_gpio_data {
 	uint32_t t_high_min;
 	uint32_t scl_fell; /* when this controller last pulled SCL low */
 };
-
-#ifdef CONFIG_SOC_SERIES_RP2040
-/* Open drain: the output is 0, the output enable pulls the line low */
-static inline void pin_set(const struct gpio_dt_spec *g, int v)
-{
-	if (v) {
-		sio_hw->gpio_oe_clr = BIT(g->pin);
-	} else {
-		sio_hw->gpio_oe_set = BIT(g->pin);
-	}
-}
-
-static inline int pin_get(const struct gpio_dt_spec *g)
-{
-	return (sio_hw->gpio_in >> g->pin) & 1;
-}
-
-static inline uint32_t now(void)
-{
-	return timer_hw->timerawl;
-}
-
-static uint32_t counter_init(void)
-{
-	return 1;
-}
-#else
-static inline void pin_set(const struct gpio_dt_spec *g, int v)
-{
-	gpio_pin_set_raw(g->port, g->pin, v);
-}
-
-static inline int pin_get(const struct gpio_dt_spec *g)
-{
-	return gpio_pin_get_raw(g->port, g->pin);
-}
-
-static inline uint32_t now(void)
-{
-	return (uint32_t)timing_counter_get();
-}
-
-static uint32_t counter_init(void)
-{
-	timing_init();
-	timing_start();
-	return MAX(timing_freq_get() / USEC_PER_SEC, 1);
-}
-#endif
 
 static inline void scl_set(const struct mm_gpio_config *cfg, int v)
 {
@@ -174,8 +120,10 @@ static bool wait_scl_high(const struct mm_gpio_config *cfg, uint32_t deadline)
 }
 
 /* Releases SCL, waits out stretching and returns with interrupts locked and SCL high. SCL is
- * high only with interrupts locked, else a preempted frame looks like a free bus: while a
- * target stretches, interrupts run with SCL held low by this master too.
+ * high only with interrupts locked, else a preempted frame looks like a free bus. While a target
+ * stretches, interrupts run: the target holds SCL low. This master must not pull it low itself: a
+ * target letting go just before that would see a clock this master does not count, and every bit
+ * after it would be one off.
  */
 static int scl_rise(struct mm_gpio_data *d, const struct mm_gpio_config *cfg, unsigned int *key)
 {
@@ -186,12 +134,10 @@ static int scl_rise(struct mm_gpio_data *d, const struct mm_gpio_config *cfg, un
 	while (!wait_scl_high(cfg, now() + us(d, STRETCH_LOCKED_US))) {
 		if (tries-- == 0U) {
 			irq_unlock(*key);
-			return -EIO;
+			return -ETIMEDOUT;
 		}
-		scl_fall(d, cfg);
 		irq_unlock(*key);
 		*key = irq_lock();
-		scl_set(cfg, 1);
 	}
 	return 0;
 }
@@ -257,38 +203,50 @@ static int read_byte(struct mm_gpio_data *d, const struct mm_gpio_config *cfg, u
 		}
 		*val = (*val << 1) | bit;
 	}
-	return clock_bit(d, cfg, ack ? 0 : 1, false, &bit);
+	/* Another reader may ACK when this controller sends its final NACK. */
+	return clock_bit(d, cfg, ack ? 0 : 1, true, &bit);
 }
 
-/* -EBUSY: someone else's transfer; -EIO: SDA held low with SCL high all along */
+/* -EBUSY: someone else's transfer; -EIO: SDA held low with SCL high all along. A frame can pass
+ * unseen while this is preempted, and unregistering the target in it breaks it: the idle time
+ * begins anew after a gap between two reads.
+ */
 static int bus_free(const struct mm_gpio_data *d, const struct mm_gpio_config *cfg)
 {
 	uint32_t end = now() + us(d, cfg->bus_timeout_us);
 	uint32_t idle_since = now();
+	uint32_t last = idle_since;
 	bool stuck = true;
 
 	while (before(end)) {
 		int scl = scl_get(cfg);
 		int sda = sda_get(cfg);
+		uint32_t t = now();
 
-		if (!(scl && sda)) {
-			idle_since = now();
-		} else if (!before(idle_since + us(d, cfg->bus_free_us))) {
+		if (!(scl && sda) || t - last > d->t_low) {
+			idle_since = t;
+		} else if (t - idle_since >= us(d, cfg->bus_free_us)) {
 			return 0;
 		}
+		last = t;
 		stuck = stuck && scl && !sda;
 	}
 	return stuck ? -EIO : -EBUSY;
 }
 
-/* SCL high, SDA high -> SDA low -> SCL low */
+/* SCL high, SDA high -> SDA low -> SCL low. The bus is free only if it stays so up to the START,
+ * after whatever ran since bus_free(): the last bus_free_us run with interrupts locked.
+ */
 static int start(struct mm_gpio_data *d, const struct mm_gpio_config *cfg)
 {
 	unsigned int key = irq_lock();
+	uint32_t end = now() + us(d, cfg->bus_free_us);
 
-	if (!scl_get(cfg) || !sda_get(cfg)) {
-		irq_unlock(key);
-		return -EAGAIN;
+	while (before(end)) {
+		if (!scl_get(cfg) || !sda_get(cfg)) {
+			irq_unlock(key);
+			return -EBUSY;
+		}
 	}
 	sda_set(cfg, 0);
 	hold_until(now() + us(d, START_STOP_US));
@@ -363,10 +321,31 @@ static int recover(struct mm_gpio_data *d, const struct mm_gpio_config *cfg)
 
 #define PIN_FLAGS (GPIO_INPUT | GPIO_OUTPUT | GPIO_OUTPUT_INIT_HIGH | GPIO_OPEN_DRAIN)
 
-/* The target gives its pins back when it is unregistered */
+/*
+ * The target block's interrupt is off while its target is not registered. An unregistered block
+ * still sees the bus: the DesignWare one (Raspberry Pi Pico) goes on signalling another master's
+ * START, which its driver clears only in target mode, and the interrupt never ends.
+ */
+static inline void target_irq_set(const struct mm_gpio_config *cfg, bool on)
+{
+	if (cfg->target_irq < 0) {
+		return;
+	}
+	if (on) {
+		irq_enable(cfg->target_irq);
+	} else {
+		irq_disable(cfg->target_irq);
+	}
+}
+
 static int pins_take(const struct mm_gpio_data *d, const struct mm_gpio_config *cfg)
 {
-	int ret = d->target_cfg ? i2c_target_unregister(cfg->target, d->target_cfg) : 0;
+	int ret = 0;
+
+	if (d->target_cfg) {
+		target_irq_set(cfg, false);
+		ret = i2c_target_unregister(cfg->target, d->target_cfg);
+	}
 
 	ret = ret ? ret : gpio_pin_configure_dt(&cfg->scl, PIN_FLAGS);
 	return ret ? ret : gpio_pin_configure_dt(&cfg->sda, PIN_FLAGS);
@@ -375,34 +354,47 @@ static int pins_take(const struct mm_gpio_data *d, const struct mm_gpio_config *
 /* The target takes the pins back before the GPIOs release them: after a STOP begun with
  * stop_begin(), releasing SDA ends it, and the target already sees the next START
  */
-static void pins_to_target(const struct mm_gpio_config *cfg)
+static int pins_to_target(const struct mm_gpio_config *cfg)
 {
-	if (cfg->pcfg != NULL) {
-		(void)pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);
-	}
+	return cfg->pcfg != NULL ? pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT) : 0;
 }
 
 static void pins_give(const struct mm_gpio_data *d, const struct mm_gpio_config *cfg)
 {
-	pins_to_target(cfg);
-	if (d->target_cfg) {
-		(void)target_reregister(cfg->target, d->target_cfg);
+	/* On the Pico pinctrl releases SDA, completing STOP. Enable the target first. */
+	int ret = d->target_cfg ? target_reregister(cfg->target, d->target_cfg) : 0;
+
+	if (d->target_cfg && ret == 0) {
+		target_irq_set(cfg, true);
 	}
+	/* Do not pause between pinctrl releasing SDA and selecting its target function. */
+	unsigned int key = irq_lock();
+	int pin_ret = pins_to_target(cfg);
+
 	release(cfg);
+	irq_unlock(key);
+	if (d->target_cfg) {
+		target_restore_report(ret ? ret : pin_ret);
+	}
+}
+
+static bool msg_addressed(const struct i2c_msg *msgs, uint8_t m)
+{
+	return m == 0 || (msgs[m - 1].flags & I2C_MSG_STOP) || (msgs[m].flags & I2C_MSG_RESTART) ||
+	       ((msgs[m].flags ^ msgs[m - 1].flags) & I2C_MSG_RW_MASK);
 }
 
 static int msgs_run(struct mm_gpio_data *d, const struct mm_gpio_config *cfg, struct i2c_msg *msgs,
 		    uint8_t num_msgs, uint16_t addr)
 {
-	bool prev_rd = false;
 	int ret = start(d, cfg);
 
 	for (uint8_t m = 0; m < num_msgs && ret == 0; m++) {
 		bool rd = (msgs[m].flags & I2C_MSG_RW_MASK) == I2C_MSG_READ;
-		bool addressed = m == 0 || (msgs[m].flags & I2C_MSG_RESTART) || rd != prev_rd;
+		bool addressed = msg_addressed(msgs, m);
 
-		prev_rd = rd;
-		if (m > 0 && addressed) {
+		/* a STOP was followed by a fresh START already */
+		if (m > 0 && addressed && !(msgs[m - 1].flags & I2C_MSG_STOP)) {
 			ret = restart(d, cfg);
 			if (ret) {
 				break;
@@ -418,7 +410,7 @@ static int msgs_run(struct mm_gpio_data *d, const struct mm_gpio_config *cfg, st
 		for (uint32_t i = 0; i < msgs[m].len && ret == 0; i++) {
 			if (rd) {
 				bool last = i + 1 == msgs[m].len &&
-					    (m + 1 == num_msgs || (msgs[m].flags & I2C_MSG_STOP));
+					    (m + 1 == num_msgs || msg_addressed(msgs, m + 1));
 
 				ret = read_byte(d, cfg, &msgs[m].buf[i], !last);
 			} else {
@@ -437,7 +429,7 @@ static int msgs_run(struct mm_gpio_data *d, const struct mm_gpio_config *cfg, st
 		}
 	}
 
-	if (ret == 0 || ret == -ENXIO || ret == -EIO) {
+	if (ret == 0 || ret == -ENXIO || ret == -EIO || ret == -ETIMEDOUT) {
 		stop_begin(d, cfg); /* pins_give() releases SDA: the STOP */
 	}
 	return ret;
@@ -459,17 +451,15 @@ static int mm_gpio_transfer(const struct device *dev, struct i2c_msg *msgs, uint
 
 	k_mutex_lock(&d->lock, K_FOREVER);
 	ret = bus_free(d, cfg);
-	if (ret == -EIO) {
-		LOG_WRN("SDA stuck low, recovering");
+	if (ret == 0 || ret == -EIO) {
+		bool stuck = ret == -EIO;
+
 		ret = pins_take(d, cfg);
-		ret = ret ? ret : recover(d, cfg);
-		ret = ret ? ret : bus_free(d, cfg);
-		if (ret == 0) {
-			ret = msgs_run(d, cfg, msgs, num_msgs, addr);
+		if (stuck) {
+			LOG_WRN("SDA stuck low, recovering");
+			ret = ret ? ret : recover(d, cfg);
+			ret = ret ? ret : bus_free(d, cfg);
 		}
-		pins_give(d, cfg);
-	} else if (ret == 0) {
-		ret = pins_take(d, cfg);
 		ret = ret ? ret : msgs_run(d, cfg, msgs, num_msgs, addr);
 		pins_give(d, cfg);
 	}
@@ -518,16 +508,128 @@ static int mm_gpio_get_config(const struct device *dev, uint32_t *dev_config)
 	return 0;
 }
 
+#ifdef CONFIG_I2C_TARGET_BUFFER_MODE
+/*
+ * A target block in buffer mode may not report a STOP (nRF TWIS), and "write done" is the same
+ * after a STOP and after a repeated START. The lines tell them apart. After a repeated START the
+ * read's address is arriving: its last clock may still be high when this runs, but within a bit
+ * SCL falls and the block holds it. After a STOP both lines stay high; the next master's START
+ * comes a bus-free time later at least.
+ */
+static bool stays_idle(const struct mm_gpio_data *d, const struct mm_gpio_config *cfg)
+{
+	uint32_t end = now() + 2 * (d->t_low + d->t_high);
+
+	while (before(end)) {
+		if (!scl_get(cfg) || !sda_get(cfg)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static struct i2c_target_config *user_of(struct i2c_target_config *own)
+{
+	return CONTAINER_OF(own, struct mm_gpio_data, own_cfg)->user_cfg;
+}
+
+static void own_buf_write_received(struct i2c_target_config *own, uint8_t *buf, uint32_t len)
+{
+	struct mm_gpio_data *d = CONTAINER_OF(own, struct mm_gpio_data, own_cfg);
+	struct i2c_target_config *tc = d->user_cfg;
+
+	tc->callbacks->buf_write_received(tc, buf, len);
+	if (stays_idle(d, d->cfg) && tc->callbacks->stop != NULL) {
+		tc->callbacks->stop(tc);
+	}
+}
+
+static int own_buf_read_requested(struct i2c_target_config *own, uint8_t **buf, uint32_t *len)
+{
+	struct i2c_target_config *tc = user_of(own);
+
+	return tc->callbacks->buf_read_requested(tc, buf, len);
+}
+
+static int own_write_requested(struct i2c_target_config *own)
+{
+	struct i2c_target_config *tc = user_of(own);
+
+	return tc->callbacks->write_requested(tc);
+}
+
+static int own_write_received(struct i2c_target_config *own, uint8_t val)
+{
+	struct i2c_target_config *tc = user_of(own);
+
+	return tc->callbacks->write_received(tc, val);
+}
+
+static int own_read_requested(struct i2c_target_config *own, uint8_t *val)
+{
+	struct i2c_target_config *tc = user_of(own);
+
+	return tc->callbacks->read_requested(tc, val);
+}
+
+static int own_read_processed(struct i2c_target_config *own, uint8_t *val)
+{
+	struct i2c_target_config *tc = user_of(own);
+
+	return tc->callbacks->read_processed(tc, val);
+}
+
+static int own_stop(struct i2c_target_config *own)
+{
+	struct i2c_target_config *tc = user_of(own);
+
+	return tc->callbacks->stop != NULL ? tc->callbacks->stop(tc) : 0;
+}
+
+static const struct i2c_target_callbacks own_callbacks = {
+	.write_requested = own_write_requested,
+	.write_received = own_write_received,
+	.read_requested = own_read_requested,
+	.read_processed = own_read_processed,
+	.buf_write_received = own_buf_write_received,
+	.buf_read_requested = own_buf_read_requested,
+	.stop = own_stop,
+};
+
+static struct i2c_target_config *block_cfg(struct mm_gpio_data *d, const struct mm_gpio_config *cfg,
+					   const struct i2c_target_config *tc)
+{
+	d->cfg = cfg;
+	d->own_cfg = *tc;
+	d->own_cfg.callbacks = &own_callbacks;
+	return &d->own_cfg;
+}
+#else
+static struct i2c_target_config *block_cfg(struct mm_gpio_data *d, const struct mm_gpio_config *cfg,
+					   struct i2c_target_config *tc)
+{
+	return tc;
+}
+#endif
+
 static int mm_gpio_target_register(const struct device *dev, struct i2c_target_config *tc)
 {
 	const struct mm_gpio_config *cfg = dev->config;
 	struct mm_gpio_data *d = dev->data;
-	int ret;
+	int ret = -EBUSY;
 
 	k_mutex_lock(&d->lock, K_FOREVER);
-	ret = d->target_cfg && d->target_cfg != tc ? -EBUSY : i2c_target_register(cfg->target, tc);
-	if (ret == 0) {
-		d->target_cfg = tc;
+	if (d->user_cfg == NULL || d->user_cfg == tc) {
+		struct i2c_target_config *block = block_cfg(d, cfg, tc);
+
+		d->user_cfg = tc;
+		ret = i2c_target_register(cfg->target, block);
+		if (ret == 0) {
+			d->target_cfg = block;
+			target_irq_set(cfg, true);
+		} else if (d->target_cfg == NULL) {
+			d->user_cfg = NULL;
+		}
 	}
 	k_mutex_unlock(&d->lock);
 	return ret;
@@ -540,9 +642,17 @@ static int mm_gpio_target_unregister(const struct device *dev, struct i2c_target
 	int ret;
 
 	k_mutex_lock(&d->lock, K_FOREVER);
-	ret = d->target_cfg != tc ? -EINVAL : i2c_target_unregister(cfg->target, tc);
+	if (d->user_cfg != tc) {
+		ret = -EINVAL;
+	} else {
+		target_irq_set(cfg, false);
+		ret = i2c_target_unregister(cfg->target, d->target_cfg);
+	}
 	if (ret == 0) {
 		d->target_cfg = NULL;
+		d->user_cfg = NULL;
+	} else if (d->user_cfg == tc) {
+		target_irq_set(cfg, true);
 	}
 	k_mutex_unlock(&d->lock);
 	return ret;
@@ -582,7 +692,7 @@ static int mm_gpio_init(const struct device *dev)
 	}
 	k_mutex_init(&d->lock);
 	d->cycles_per_us = counter_init();
-	pins_to_target(cfg);
+	(void)pins_to_target(cfg);
 	return mm_gpio_configure(dev, I2C_MODE_CONTROLLER |
 					      I2C_SPEED_SET(cfg->bitrate > I2C_BITRATE_STANDARD
 								    ? I2C_SPEED_FAST
@@ -595,6 +705,8 @@ static int mm_gpio_init(const struct device *dev)
 	static struct mm_gpio_data mm_gpio_data_##n;                                               \
 	static const struct mm_gpio_config mm_gpio_config_##n = {                                  \
 		.target = DEVICE_DT_GET(DT_INST_PHANDLE(n, target)),                               \
+		.target_irq = COND_CODE_1(DT_IRQ_HAS_IDX(DT_INST_PHANDLE(n, target), 0),           \
+					  (DT_IRQN(DT_INST_PHANDLE(n, target))), (-1)),            \
 		.pcfg = COND_CODE_1(DT_INST_PINCTRL_HAS_NAME(n, default),                          \
 				    (PINCTRL_DT_INST_DEV_CONFIG_GET(n)), (NULL)),                  \
 		.scl = GPIO_DT_SPEC_INST_GET(n, scl_gpios),                                        \

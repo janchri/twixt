@@ -28,13 +28,6 @@
  */
 int i2c_mm_native_bottom_attach(int bus_id);
 
-/* Number of live processes that have a target address on the bus */
-int i2c_mm_native_bottom_targets(void);
-
-/* Test bench barrier: mark this process done; count the live ones that are */
-void i2c_mm_native_bottom_set_done(void);
-int i2c_mm_native_bottom_done_count(void);
-
 /* Target address of this process, -1 for none. 0 or a negative errno. */
 int i2c_mm_native_bottom_set_target(int addr);
 
@@ -75,11 +68,5 @@ void i2c_mm_native_bottom_cancel(int target_slot);
 /* Target side: take the pending event, if any, and answer it */
 int i2c_mm_native_bottom_fetch(int *ev, uint8_t *byte);
 void i2c_mm_native_bottom_answer(int result, uint8_t byte);
-
-/* Wall clock shared by all processes */
-int64_t i2c_mm_native_bottom_wall_us(void);
-
-/* Wall clock time at which the first process of this run joined the bus */
-int64_t i2c_mm_native_bottom_epoch_us(void);
 
 #endif /* DRIVERS_I2C_I2C_MM_NATIVE_BOTTOM_H_ */

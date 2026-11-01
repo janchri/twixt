@@ -8,7 +8,7 @@ description: |
 
     bus_uart: bus-uart {
             compatible = "twixt,uart";
-            peer = <&gw>;
+            peer = <&bridge>;
     };
 
 compatible: "twixt,uart"

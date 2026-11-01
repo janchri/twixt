@@ -27,7 +27,7 @@
 #include "i2c_mm_native_bottom.h"
 
 #define MAX_SLOTS  8
-#define WIRE_MAGIC 0x33634d4dU
+#define WIRE_MAGIC 0x34634d4dU
 
 struct slot {
 	pid_t pid;           /* 0: slot is free */
@@ -38,7 +38,6 @@ struct slot {
 	int32_t result;
 	uint8_t ev_byte;
 	uint8_t ans_byte;
-	uint8_t done; /* test bench: i2c_mm_native_bottom_set_done() */
 };
 
 struct wire {
@@ -49,7 +48,6 @@ struct wire {
 	int32_t key_len;
 	uint8_t key[I2C_MM_NATIVE_BOTTOM_KEY_MAX];
 	int64_t start_ns; /* when the owner's START began */
-	int64_t epoch_ns; /* when the first process of this run joined */
 	struct slot slots[MAX_SLOTS];
 };
 
@@ -63,16 +61,6 @@ static int64_t mono_ns(void)
 
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	return (int64_t)ts.tv_sec * 1000000000LL + ts.tv_nsec;
-}
-
-int64_t i2c_mm_native_bottom_wall_us(void)
-{
-	return mono_ns() / 1000;
-}
-
-int64_t i2c_mm_native_bottom_epoch_us(void)
-{
-	return wire->epoch_ns / 1000;
 }
 
 static void lock(void)
@@ -218,9 +206,6 @@ int i2c_mm_native_bottom_attach(int bus_id)
 
 	lock();
 	reap();
-	if (bus_empty()) {
-		wire->epoch_ns = mono_ns(); /* nobody else is on the bus: a new run */
-	}
 	for (int i = 0; i < MAX_SLOTS; i++) {
 		if (wire->slots[i].pid == 0) {
 			struct slot *s = &wire->slots[i];
@@ -240,39 +225,6 @@ int i2c_mm_native_bottom_attach(int bus_id)
 	}
 	atexit(detach);
 	return 0;
-}
-
-int i2c_mm_native_bottom_targets(void)
-{
-	int n = 0;
-
-	lock();
-	reap();
-	for (int i = 0; i < MAX_SLOTS; i++) {
-		n += wire->slots[i].pid != 0 && wire->slots[i].target_addr >= 0;
-	}
-	unlock();
-	return n;
-}
-
-void i2c_mm_native_bottom_set_done(void)
-{
-	lock();
-	wire->slots[my_slot].done = 1;
-	unlock();
-}
-
-int i2c_mm_native_bottom_done_count(void)
-{
-	int n = 0;
-
-	lock();
-	reap();
-	for (int i = 0; i < MAX_SLOTS; i++) {
-		n += wire->slots[i].pid != 0 && wire->slots[i].done;
-	}
-	unlock();
-	return n;
 }
 
 static int find_target(int addr, int with_mine)

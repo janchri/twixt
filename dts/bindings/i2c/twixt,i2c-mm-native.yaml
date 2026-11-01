@@ -15,9 +15,9 @@ description: |
     100000; run in real time.
   - A stuck bus (i2c_mm_native_stick_bus()) is recovered before the next START.
 
-  Test bench helpers: <drivers/i2c/i2c_mm_native.h>.
+  Test bench helpers: drivers/i2c/native/i2c_mm_native.h.
 
-compatible: "twixt,native-i2c-mm"
+compatible: "twixt,i2c-mm-native"
 
 include: i2c-controller.yaml
 

@@ -31,7 +31,7 @@ LOG_MODULE_REGISTER(uart_twixt, CONFIG_UART_LOG_LEVEL);
 
 #define CHUNK CONFIG_UART_TWIXT_CHUNK
 
-BUILD_ASSERT(CHUNK <= TWIXT_REQ_DATA_MAX, "a chunk must fit CONFIG_I2C_MM_MSG_MAX");
+BUILD_ASSERT(CHUNK <= TWIXT_REQ_DATA_MAX, "a chunk must fit CONFIG_TWIXT_LINK_MSG_MAX");
 
 #define POLL_OUT_TIMEOUT_MS 100
 
@@ -228,7 +228,7 @@ static int uart_twixt_send(const struct device *dev)
 		return -EAGAIN;
 	}
 	if (ret) {
-		taken = n; /* nobody answers: drop, as without a cable */
+		taken = n;
 	}
 	K_SPINLOCK(&d->lock) {
 		ring_buf_consume(&d->tx, MIN(taken, n));
@@ -304,7 +304,7 @@ static int uart_twixt_serve(const struct twixt_req *req, uint8_t *rsp_data)
 		if (n > 0) {
 			uart_twixt_kick(d);
 		}
-		rsp_data[0] = n; /* the rest the sender sends again */
+		rsp_data[0] = n;
 		return 1;
 	}
 	return -ENODEV;
