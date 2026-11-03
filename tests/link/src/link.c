@@ -38,11 +38,16 @@ static int fake_configure(const struct device *dev, uint32_t config)
 static int transfer_ret;
 static int transfers;
 static int busy_transfers;
+static const int *script; /* the results of the first transfers, then as above */
+static int script_len;
 
 static int fake_transfer(const struct device *dev, struct i2c_msg *msgs, uint8_t num_msgs,
 			 uint16_t addr)
 {
-	return ++transfers <= busy_transfers ? -EBUSY : transfer_ret;
+	if (++transfers <= script_len) {
+		return script[transfers - 1];
+	}
+	return transfers <= busy_transfers ? -EBUSY : transfer_ret;
 }
 
 static int fake_target_register(const struct device *dev, struct i2c_target_config *cfg)
@@ -78,6 +83,8 @@ static void before(void *fixture)
 	transfer_ret = 0;
 	transfers = 0;
 	busy_transfers = 0;
+	script = NULL;
+	script_len = 0;
 }
 
 ZTEST(twixt_link, test_address_nack_retried)
@@ -99,6 +106,20 @@ ZTEST(twixt_link, test_address_nack_retried_after_busy_bus)
 	transfer_ret = -ENXIO;
 	zassert_equal(twixt_link_transfer(&mm, OTHER_ADDR, &req, 1, &rsp, 1), -ENXIO);
 	zassert_true(transfers > busy_transfers + 1);
+}
+
+/* Nor does a busy bus between two NACKs */
+ZTEST(twixt_link, test_address_nack_retried_across_busy_bus)
+{
+	/* 1 + 4 + 6 ms of backing off: past the NACK time at the second NACK */
+	static const int results[] = {-ENXIO, -EBUSY, -EBUSY, -ENXIO};
+	uint8_t req = 1, rsp;
+
+	BUILD_ASSERT(CONFIG_TWIXT_LINK_NACK_RETRY_MS < 11);
+	script = results;
+	script_len = ARRAY_SIZE(results);
+	zassert_equal(twixt_link_transfer(&mm, OTHER_ADDR, &req, 1, &rsp, 1), 0);
+	zassert_equal(transfers, ARRAY_SIZE(results) + 1);
 }
 
 ZTEST(twixt_link, test_not_retried)

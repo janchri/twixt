@@ -176,8 +176,7 @@ int twixt_link_transfer(struct twixt_link *link, uint16_t addr, const void *req,
 		k_mutex_unlock(&link->lock);
 
 		if (nack) {
-			/* From the first NACK: a busy bus before it says nothing about the target
-			 */
+			/* From the first NACK of a run */
 			if (!nacked) {
 				nacked = true;
 				nack_end =
@@ -201,6 +200,10 @@ int twixt_link_transfer(struct twixt_link *link, uint16_t addr, const void *req,
 		LOG_DBG("0x%02x: request to 0x%02x attempt %u: %s, backing off",
 			link->target.address, addr, i,
 			ret == -EAGAIN ? "lost arbitration" : "bus busy");
+		/* The NACK time counts runs of NACKs only: a busy bus between two says nothing
+		 * about the target. A busy bus still gives up at end.
+		 */
+		nacked = false;
 		/* out of the winner's START window, then wait for its STOP */
 		k_sleep(K_MSEC(2 * MIN(i, 4)));
 	}
