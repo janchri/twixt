@@ -71,7 +71,7 @@ jobs:
       - uses: zephyrproject-rtos/action-zephyr-setup@v1.0.15
         with:
           app-path: twixt
-          toolchains: arm-zephyr-eabi
+          toolchains: arm-zephyr-eabi:xtensa-espressif_esp32_zephyr-elf
 
       # The platforms come from platform_allow in each tests.yaml
       - name: Run the tests on native_sim, build everything else
