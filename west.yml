@@ -19,10 +19,11 @@ manifest:
       remote: zephyrproject
       revision: v4.5.0
       import:
-        # What the samples need: the Raspberry Pi Pico and the nRF7002 DK,
-        # MCUboot (with its crypto) and MCUmgr
+        # What the samples and tests need: the Raspberry Pi Pico, the nRF7002
+        # DK and the classic ESP32, MCUboot (with its crypto) and MCUmgr
         name-allowlist:
           - cmsis_6
+          - hal_espressif
           - hal_nordic
           - hal_rpi_pico
           - mbedtls
