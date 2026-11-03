@@ -32,8 +32,9 @@ static inline uint32_t counter_init(void)
 #ifdef CONFIG_I2C_MM_ESP32_TARGET
 /* Optional target handoff contract:
  * matches() selects only target devices owned by this backend.
- * take() borrows pins without unregistering; on error it leaves the target intact.
- * give() restores target routing after the controller releases the lines.
+ * take() borrows pins without unregistering. It fails while a peer's frame is in flight,
+ * one with an edge in the last idle_us, unless forced; on error nothing is taken.
+ * give() after a successful take() only: restores target routing once the lines are released.
  * The backend owns its interrupts throughout. Ports without this define retain
  * the existing unregister/restore path, including target-restore reporting.
  */
@@ -43,14 +44,28 @@ static inline bool target_handoff_matches(const struct device *dev)
 	return i2c_mm_esp32_target_matches(dev);
 }
 
-static inline int target_handoff_take(const struct device *dev)
+static inline int target_handoff_take(const struct device *dev, uint32_t idle_us, bool force)
 {
-	return i2c_mm_esp32_target_take(dev);
+	return i2c_mm_esp32_target_take(dev, idle_us, force);
 }
 
 static inline void target_handoff_give(const struct device *dev)
 {
 	i2c_mm_esp32_target_give(dev);
 }
+
+/* The wrapper drives the target's own pins, by number on gpio0 (see pin_set()) */
+#define MM_GPIO_PORT_CHECK(n)                                                                      \
+	COND_CODE_1(DT_NODE_HAS_COMPAT(DT_INST_PHANDLE(n, target), twixt_esp32_i2c_target),       \
+		    (BUILD_ASSERT(DT_SAME_NODE(DT_GPIO_CTLR(DT_DRV_INST(n), scl_gpios),                    \
+					       DT_NODELABEL(gpio0)) &&                             \
+				  DT_SAME_NODE(DT_GPIO_CTLR(DT_DRV_INST(n), sda_gpios),                    \
+					       DT_NODELABEL(gpio0)) &&                             \
+				  DT_INST_GPIO_PIN(n, scl_gpios) ==                                \
+					  DT_GPIO_PIN(DT_INST_PHANDLE(n, target), scl_gpios) &&    \
+				  DT_INST_GPIO_PIN(n, sda_gpios) ==                                \
+					  DT_GPIO_PIN(DT_INST_PHANDLE(n, target), sda_gpios),      \
+			  "twixt,i2c-mm-gpio pins must be its ESP32 target's, on gpio0");), \
+		    ())
 #endif /* CONFIG_I2C_MM_ESP32_TARGET */
 #endif

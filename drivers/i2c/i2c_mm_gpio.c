@@ -33,6 +33,10 @@ LOG_MODULE_REGISTER(i2c_mm_gpio, CONFIG_I2C_LOG_LEVEL);
 #include "i2c_mm_gpio_port.h"
 #include "target_restore.h"
 
+#ifndef MM_GPIO_PORT_CHECK
+#define MM_GPIO_PORT_CHECK(n)
+#endif
+
 #define STRETCH_LOCKED_US 100
 #define RECOVERY_CLOCKS   9
 #define LOW_SHARE         55 /* % of the period, like the minimum 4.7 us low to 4.0 us high */
@@ -343,13 +347,25 @@ static inline void target_irq_set(const struct mm_gpio_config *cfg, bool on)
 	}
 }
 
-static int pins_take(const struct mm_gpio_data *d, const struct mm_gpio_config *cfg)
+static inline bool handoff(const struct mm_gpio_config *cfg)
+{
+#ifdef MM_GPIO_TARGET_HANDOFF
+	return target_handoff_matches(cfg->target);
+#else
+	return false;
+#endif
+}
+
+/* stuck: bus_free() saw SDA held low throughout, so no peer's frame can still be running.
+ * A failed handoff takes nothing and must not be followed by pins_give().
+ */
+static int pins_take(const struct mm_gpio_data *d, const struct mm_gpio_config *cfg, bool stuck)
 {
 	int ret = 0;
 
 #ifdef MM_GPIO_TARGET_HANDOFF
-	if (target_handoff_matches(cfg->target)) {
-		return target_handoff_take(cfg->target);
+	if (handoff(cfg)) {
+		return target_handoff_take(cfg->target, cfg->bus_free_us, stuck);
 	}
 #endif
 	if (d->target_cfg) {
@@ -471,13 +487,11 @@ static int mm_gpio_transfer(const struct device *dev, struct i2c_msg *msgs, uint
 	if (ret == 0 || ret == -EIO) {
 		bool stuck = ret == -EIO;
 
-		ret = pins_take(d, cfg);
-#ifdef MM_GPIO_TARGET_HANDOFF
-		if (ret && target_handoff_matches(cfg->target)) {
+		ret = pins_take(d, cfg, stuck);
+		if (ret && handoff(cfg)) {
 			k_mutex_unlock(&d->lock);
 			return ret;
 		}
-#endif
 		if (stuck) {
 			LOG_WRN("SDA stuck low, recovering");
 			ret = ret ? ret : recover(d, cfg);
@@ -696,7 +710,17 @@ static int mm_gpio_recover_bus(const struct device *dev)
 	int ret;
 
 	k_mutex_lock(&d->lock, K_FOREVER);
-	ret = pins_take(d, cfg);
+	if (handoff(cfg)) {
+		/* Also waits out a peer's frame to the target: taking the pins would cut it */
+		ret = bus_free(d, cfg);
+		ret = ret == 0 || ret == -EIO ? pins_take(d, cfg, ret == -EIO) : ret;
+		if (ret) {
+			k_mutex_unlock(&d->lock);
+			return ret;
+		}
+	} else {
+		ret = pins_take(d, cfg, false);
+	}
 	ret = ret ? ret : recover(d, cfg);
 	pins_give(d, cfg);
 	k_mutex_unlock(&d->lock);
@@ -733,6 +757,7 @@ static int mm_gpio_init(const struct device *dev)
 /* clang-format off */
 #define MM_GPIO_INST(n)                                                                            \
 	IF_ENABLED(DT_INST_PINCTRL_HAS_NAME(n, default), (PINCTRL_DT_INST_DEFINE(n);))             \
+	MM_GPIO_PORT_CHECK(n)                                                                      \
 	static struct mm_gpio_data mm_gpio_data_##n;                                               \
 	static const struct mm_gpio_config mm_gpio_config_##n = {                                  \
 		.target = DEVICE_DT_GET(DT_INST_PHANDLE(n, target)),                               \

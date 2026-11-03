@@ -23,6 +23,11 @@
 #define TX_INTR   I2C_TXFIFO_EMPTY_INT_ENA_M
 #define END_INTR  I2C_TRANS_COMPLETE_INT_ENA_M
 #define PIN_FLAGS (GPIO_INPUT | GPIO_OUTPUT | GPIO_OUTPUT_INIT_HIGH | GPIO_OPEN_DRAIN)
+#define CYCLES_US (CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC / 1000000U)
+
+/* Buffer-mode callbacks are never called here, and twixt,i2c-mm-gpio installs them in that mode */
+BUILD_ASSERT(!IS_ENABLED(CONFIG_I2C_TARGET_BUFFER_MODE),
+	     "The ESP32 target needs CONFIG_I2C_TARGET_BUFFER_MODE=n");
 
 struct target_config {
 	const struct device *clock;
@@ -38,6 +43,7 @@ struct target_data {
 	const struct device *dev;
 	bool writing, reading, armed, held, controller;
 	uint32_t rise;
+	uint32_t edge; /* the last SCL or SDA edge the target saw */
 };
 
 BUILD_ASSERT(DT_IRQ(DT_NODELABEL(gpio0), priority) == 3,
@@ -135,6 +141,7 @@ static void IRAM_ATTR boundary(const struct device *gpio, struct gpio_callback *
 	int scl = gpio_ll_get_level(&GPIO, cfg->scl.pin);
 
 	ARG_UNUSED(gpio);
+	d->edge = esp_cpu_get_cycle_count();
 	if (!d->target || d->controller || d->held) {
 		return;
 	}
@@ -178,8 +185,7 @@ static void IRAM_ATTR boundary(const struct device *gpio, struct gpio_callback *
 		 */
 		gpio_ll_get_intr_status(&GPIO, arch_curr_cpu()->id, &late_edges);
 		if ((late_edges & BIT(cfg->scl.pin)) ||
-		    esp_cpu_get_cycle_count() - d->rise <
-			    3 * (CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC / 1000000U)) {
+		    esp_cpu_get_cycle_count() - d->rise < 3 * CYCLES_US) {
 			return;
 		}
 		if (!d->writing) {
@@ -189,13 +195,41 @@ static void IRAM_ATTR boundary(const struct device *gpio, struct gpio_callback *
 	}
 }
 
-int i2c_mm_esp32_target_take(const struct device *dev)
+/* Routes SDA back to the peripheral and listens for the repeated START again */
+static void target_arm(const struct target_config *cfg, struct target_data *d)
+{
+	esp_rom_gpio_connect_out_signal(cfg->sda.pin,
+					(cfg->port ? I2CEXT1_SDA_OUT_IDX : I2CEXT0_SDA_OUT_IDX),
+					false, false);
+	d->rise = d->edge = esp_cpu_get_cycle_count();
+	gpio_pin_interrupt_configure_dt(&cfg->scl, GPIO_INT_EDGE_BOTH);
+	gpio_pin_interrupt_configure_dt(&cfg->sda, GPIO_INT_EDGE_FALLING);
+}
+
+/* A peer's frame is in flight, as far as the peripheral or this driver can tell. Short writes
+ * set no flag before their STOP, so the peripheral's bus-busy bit and RX FIFO count too. The
+ * state is stale once both lines have been high, with no edge, for idle_us: the controller's
+ * bus_free() takes such a bus as free anyway, and a peer that reset mid-frame never sends STOP.
+ */
+static bool peer_frame(const struct target_config *cfg, struct target_data *d, uint32_t idle_us)
+{
+	uint32_t count;
+
+	i2c_ll_get_rxfifo_cnt(d->hw, &count);
+	if (!(d->armed || d->writing || d->reading || count || i2c_ll_is_bus_busy(d->hw))) {
+		return false;
+	}
+	return !gpio_ll_get_level(&GPIO, cfg->scl.pin) || !gpio_ll_get_level(&GPIO, cfg->sda.pin) ||
+	       esp_cpu_get_cycle_count() - d->edge < idle_us * CYCLES_US;
+}
+
+int i2c_mm_esp32_target_take(const struct device *dev, uint32_t idle_us, bool force)
 {
 	const struct target_config *cfg = dev->config;
 	struct target_data *d = dev->data;
 	unsigned int key = irq_lock();
 
-	if (d->held || d->armed || d->writing || d->reading) {
+	if (d->target && !force && peer_frame(cfg, d, idle_us)) {
 		irq_unlock(key);
 		return -EBUSY;
 	}
@@ -203,6 +237,13 @@ int i2c_mm_esp32_target_take(const struct device *dev)
 	gpio_pin_interrupt_configure_dt(&cfg->scl, GPIO_INT_DISABLE);
 	gpio_pin_interrupt_configure_dt(&cfg->sda, GPIO_INT_DISABLE);
 	esp_rom_gpio_connect_out_signal(cfg->sda.pin, SIG_GPIO_OUT_IDX, false, false);
+	if (d->writing || d->reading || d->armed) {
+		/* A dead peer's frame: no STOP will end it, so drop it here */
+		i2c_ll_disable_intr_mask(d->hw, TX_INTR);
+		i2c_ll_txfifo_rst(d->hw);
+		i2c_ll_rxfifo_rst(d->hw);
+		d->writing = d->reading = d->armed = false;
+	}
 	irq_unlock(key);
 	return 0;
 }
@@ -213,16 +254,15 @@ void i2c_mm_esp32_target_give(const struct device *dev)
 	struct target_data *d = dev->data;
 	unsigned int key = irq_lock();
 
-	esp_rom_gpio_connect_out_signal(cfg->sda.pin,
-					(cfg->port ? I2CEXT1_SDA_OUT_IDX : I2CEXT0_SDA_OUT_IDX),
-					false, false);
-	/* Discard peripheral RX from our controller frame before serving peers again. */
-	i2c_ll_rxfifo_rst(d->hw);
-	i2c_ll_clear_intr_mask(d->hw, UINT32_MAX);
 	d->controller = false;
-	d->rise = esp_cpu_get_cycle_count();
-	gpio_pin_interrupt_configure_dt(&cfg->scl, GPIO_INT_EDGE_BOTH);
-	gpio_pin_interrupt_configure_dt(&cfg->sda, GPIO_INT_EDGE_FALLING);
+	if (d->target) {
+		/* Our frame ended with a STOP; still busy: a peer STARTed since, keep its data */
+		if (!i2c_ll_is_bus_busy(d->hw)) {
+			i2c_ll_rxfifo_rst(d->hw);
+			i2c_ll_clear_intr_mask(d->hw, UINT32_MAX);
+		}
+		target_arm(cfg, d);
+	}
 	irq_unlock(key);
 }
 
@@ -236,11 +276,6 @@ static int target_register(const struct device *dev, struct i2c_target_config *t
 	    (target->flags & I2C_TARGET_FLAGS_ADDR_10_BITS)) {
 		return -EINVAL;
 	}
-#ifdef CONFIG_I2C_TARGET_BUFFER_MODE
-	if (target->callbacks->buf_write_received || target->callbacks->buf_read_requested) {
-		return -ENOTSUP;
-	}
-#endif
 	key = irq_lock();
 	if (d->target) {
 		irq_unlock(key);
@@ -262,12 +297,7 @@ static int target_register(const struct device *dev, struct i2c_target_config *t
 	i2c_ll_set_sda_timing(d->hw, 10, 10);
 	i2c_ll_clear_intr_mask(d->hw, UINT32_MAX);
 	i2c_ll_enable_intr_mask(d->hw, RX_INTR | END_INTR);
-	esp_rom_gpio_connect_out_signal(cfg->sda.pin,
-					(cfg->port ? I2CEXT1_SDA_OUT_IDX : I2CEXT0_SDA_OUT_IDX),
-					false, false);
-	d->rise = esp_cpu_get_cycle_count();
-	gpio_pin_interrupt_configure_dt(&cfg->scl, GPIO_INT_EDGE_BOTH);
-	gpio_pin_interrupt_configure_dt(&cfg->sda, GPIO_INT_EDGE_FALLING);
+	target_arm(cfg, d);
 	irq_unlock(key);
 	return 0;
 }
