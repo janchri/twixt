@@ -18,7 +18,7 @@ config TWIXT_LINK_MSG_MAX
 
 config TWIXT_LINK_RETRY_MS
 	int "Retry time after lost arbitration or a busy bus, in ms"
-	default 500
+	default 100
 
 config TWIXT_LINK_NACK_RETRY_MS
 	int "Retry time after an address NACK, in ms"

@@ -31,7 +31,7 @@ def pytest_addoption(parser):
         default=None,
         help='real boards: <mcu>=<port>,..., e.g. pico=/dev/ttyACM2,nrf=/dev/ttyACM1',
     )
-    parser.addoption('--interval', type=int, default=5, help='ms between echo requests (5)')
+    parser.addoption('--interval', type=int, default=33, help='ms between echo requests (33)')
     parser.addoption('--seconds', type=int, default=1, help='seconds per cell (1)')
     parser.addoption(
         '--senders', default=None, help='only these rows: <combo>,..., e.g. nrf2+nrf+pico'

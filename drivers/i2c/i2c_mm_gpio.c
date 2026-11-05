@@ -356,6 +356,8 @@ static inline bool handoff(const struct mm_gpio_config *cfg)
 #endif
 }
 
+static void pins_give(const struct mm_gpio_data *d, const struct mm_gpio_config *cfg);
+
 /* stuck: bus_free() saw SDA held low throughout, so no peer's frame can still be running.
  * A failed handoff takes nothing and must not be followed by pins_give().
  */
@@ -371,10 +373,18 @@ static int pins_take(const struct mm_gpio_data *d, const struct mm_gpio_config *
 	if (d->target_cfg) {
 		target_irq_set(cfg, false);
 		ret = i2c_target_unregister(cfg->target, d->target_cfg);
+		if (ret != 0) {
+			target_irq_set(cfg, true);
+			return ret;
+		}
 	}
 
-	ret = ret ? ret : gpio_pin_configure_dt(&cfg->scl, PIN_FLAGS);
-	return ret ? ret : gpio_pin_configure_dt(&cfg->sda, PIN_FLAGS);
+	ret = gpio_pin_configure_dt(&cfg->scl, PIN_FLAGS);
+	ret = ret ? ret : gpio_pin_configure_dt(&cfg->sda, PIN_FLAGS);
+	if (ret != 0) {
+		pins_give(d, cfg);
+	}
+	return ret;
 }
 
 /* The target takes the pins back before the GPIOs release them: after a STOP begun with
@@ -488,7 +498,7 @@ static int mm_gpio_transfer(const struct device *dev, struct i2c_msg *msgs, uint
 		bool stuck = ret == -EIO;
 
 		ret = pins_take(d, cfg, stuck);
-		if (ret && handoff(cfg)) {
+		if (ret != 0) {
 			k_mutex_unlock(&d->lock);
 			return ret;
 		}
@@ -720,6 +730,10 @@ static int mm_gpio_recover_bus(const struct device *dev)
 		}
 	} else {
 		ret = pins_take(d, cfg, false);
+		if (ret != 0) {
+			k_mutex_unlock(&d->lock);
+			return ret;
+		}
 	}
 	ret = ret ? ret : recover(d, cfg);
 	pins_give(d, cfg);
