@@ -45,11 +45,14 @@ static int (*const unused_init)(const struct device *dev) __unused = mm_gpio_ini
 static bool target_ready;
 static bool stop_before_target;
 static int restore_ret;
+static int unregister_ret;
+static uint32_t registrations;
 
 static struct i2c_target_config *block_registered;
 
 static int handoff_target_register(const struct device *dev, struct i2c_target_config *tc)
 {
+	registrations++;
 	target_ready = restore_ret == 0;
 	block_registered = restore_ret == 0 ? tc : NULL;
 	return restore_ret;
@@ -57,7 +60,7 @@ static int handoff_target_register(const struct device *dev, struct i2c_target_c
 
 static int handoff_target_unregister(const struct device *dev, struct i2c_target_config *tc)
 {
-	return tc == block_registered ? 0 : -EINVAL;
+	return tc == block_registered ? unregister_ret : -EINVAL;
 }
 
 static DEVICE_API(i2c, handoff_api) = {
@@ -291,6 +294,8 @@ static void bus_reset(void *fixture)
 	target_ready = false;
 	stop_before_target = false;
 	restore_ret = 0;
+	unregister_ret = 0;
+	registrations = 0;
 	m_scl = m_sda = t_sda = 1;
 	in_frame = false;
 	next_read = FIRST_READ;
@@ -519,6 +524,30 @@ ZTEST(twixt_gpio_bus, test_target_irq_stays_off_without_target)
 	restore_ret = -EIO;
 	pins_give(&d, &handoff);
 	zassert_equal(target_irq_on, 0);
+}
+
+ZTEST(twixt_gpio_bus, test_busy_target_handoff_keeps_active_target)
+{
+	struct i2c_target_config tc = {0};
+	struct mm_gpio_config handoff = cfg;
+	struct mm_gpio_data d = data;
+	struct device dev = {.config = &handoff, .data = &d};
+	uint8_t byte = 0;
+	struct i2c_msg msg = {.buf = &byte, .len = 1, .flags = I2C_MSG_STOP};
+
+	handoff.target = DEVICE_GET(handoff_i2c);
+	d.target_cfg = &tc;
+	block_registered = &tc;
+	target_ready = true;
+	target_irq_on = 1;
+	unregister_ret = -EBUSY;
+	k_mutex_init(&d.lock);
+	zassert_equal(mm_gpio_transfer(&dev, &msg, 1, TARGET_ADDR), -EBUSY);
+	zassert_equal(mm_gpio_recover_bus(&dev), -EBUSY);
+	zassert_equal(registrations, 0, "a refused handoff must not reset the target");
+	zassert_equal(target_irq_on, 1);
+	zassert_equal(block_registered, &tc);
+	zassert_str_equal(trace, "");
 }
 
 /* However long this master is preempted, a frame in the meantime begins the idle time anew */

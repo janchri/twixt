@@ -40,7 +40,7 @@ Options
 -------
 
 - ``--seconds``: per cell, default 1
-- ``--interval``: ms between a sender's requests, default 5
+- ``--interval``: ms between a sender's requests, default 33
 - ``--ports``: real boards, ``<mcu>=<port>,...``
 - ``--senders``: only these rows, e.g. ``nrf+pico``
 - ``-s``: also print the calls of each sender
